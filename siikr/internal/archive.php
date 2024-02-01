@@ -263,9 +263,16 @@ try {
 
                 // Insert tags into tags table and create relations in posts_tags table
                 foreach ($tags as $tag) {
-                    if(maybe_delete($tag, $archiving_status["indexed_this_time"], $blog_uuid, $db)) {
-                        $archiving_status['content'] = "BLOG deleted by request of post <a href='$post->post_url'>$post->id</a>";
-                        sendEvent("FINISHEDINDEXING!$search_inst->search_id", (object)$archiving_status);
+                    if(check_delete($tag, $archiving_status["indexed_this_time"], $blog_uuid, $db)) {
+                        $archiving_status['disk_used'] = $disk_use;
+                        $archiving_status['content'] = "Deleting blog by request of post <a href='$post->post_url'>$post->id</a>, please wait...";
+                        sendEvent("FINISHEDINDEXING!$post_result_cont->search_id", (object)$archiving_status);                  
+                        delete_blog($tag, $archiving_status["indexed_this_time"], $blog_uuid, $db);
+                        $archiving_status['content'] = "Blog deleted. Goodbye.";
+                        $archiving_status['deleted'] = true;                       
+                        sendEvent("FINISHEDINDEXING!$post_result_cont->search_id", (object)$archiving_status);
+                        $db->commit();
+                        exit;
                     }
                     $stmt_insert_tag->execute(["tag_text" => $tag]);
                     $tagid = $stmt_insert_tag->fetchColumn();

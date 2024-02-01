@@ -30,7 +30,11 @@ function createFifo($fifoPath) {
 }
 
 function exportData($blogInfo) {
-    global $basePath, $db_name, $db_user;
+    global $basePath, $db_name;
+
+    // Assuming $db_name is defined in 'globals.php' and accessible here
+    $username = 'eron'; // Your PostgreSQL username
+    $password = ''; // PostgreSQL password, if required
 
     $post_columns = [
         "post_id", "blog_uuid", "tag_text", "post_date", "post_url",
@@ -55,7 +59,7 @@ function exportData($blogInfo) {
 
     // Prepare and execute psql command, and compress each query result into a single .tar.gz
     foreach ($exportQueries as $tableName => $query) {
-        $fullCommand = "psql -d '$db_name' -U '$db_user' -c " . escapeshellarg($query) . " | gzip > '{$basePath}/temp/{$tableName}'";
+        $fullCommand = "psql -d '$db_name' -U '$username' -c " . escapeshellarg($query) . " | gzip > '{$basePath}/temp/{$tableName}'";
         system($fullCommand);
     }
 
@@ -67,10 +71,11 @@ function exportData($blogInfo) {
     $gzipCommand = "gzip $tempArchivePath";
     system($gzipCommand);
 
+    // Return the path of the compressed archive
     return $compressedArchivePath;
 }
 
-
+// Main
 $identifiers = $argc > 1 ? array_slice($argv, 1) : [];
 if (empty($identifiers)) {
     $blogName = prompt("Enter the blog name: ");
