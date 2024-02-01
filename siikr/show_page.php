@@ -1,7 +1,8 @@
 <?php
-$scriptVer=18;
+require_once 'internal/disk.php';
+$scriptVer=19;
 try {
-    $diskpath = "/mnt/volume_sfo3_01";
+    $diskpath = $db_disk;
     $total_diskspace = disk_total_space($diskpath);
     $free_space = disk_free_space($diskpath);
     $used_percent = (1.0 - ($free_space/$total_diskspace))*100.0;

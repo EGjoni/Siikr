@@ -2,6 +2,7 @@
 
 $predir = __DIR__.'/../';
 require_once $predir.'auth/credentials.php';
+require_once __DIR__.'/disk.php';
 
 
 $clean_sp = ["sp_self_text", "sp_trail_text", "sp_image_text", "sp_tag_text"];
@@ -338,7 +339,7 @@ function sanitizeParams($paramArr) {
 }
 
 function get_disk_stats() {
-  $diskpath = "/mnt/volume_sfo3_01";
+  $diskpath = $db_disk;
   $total_diskspace = disk_total_space($diskpath);
   $free_space = disk_free_space($diskpath);
   $used_percent = (1 - $free_space/$total_diskspace)*100;

@@ -74,6 +74,11 @@ set_credentials_file() {
 \$db_user = '$pg_user';
 \$db_pass = '$pg_pass';
 EOF
+
+    cat > "$script_dir/siikr/internal/disk.php" << EOF
+<?php
+\$db_disk = '$pg_disk';
+EOF
 }
 
 copy_data() {
