@@ -1,0 +1,5 @@
+siikr/.vscode/launch.json
+siikr/dev/**
+siikr/auth/**
+siikr/internal/disks.php
+siikr/management/archive_blogs.php

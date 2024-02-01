@@ -26,6 +26,7 @@ try {
             $error_string .= "$err->detail \n";
         }           
         throw new Exception("Tumblr says: \"$error_string\"");
+    }
     $blog_info = $response->response->blog;
     $blog_info->valid = true;
     $blog_info->blog_uuid = $blog_info->uuid;
