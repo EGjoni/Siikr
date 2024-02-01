@@ -2,7 +2,6 @@
 
 $predir = __DIR__.'/../';
 require_once $predir.'auth/credentials.php';
-require_once __DIR__.'/disk.php';
 
 
 $clean_sp = ["sp_self_text", "sp_trail_text", "sp_image_text", "sp_tag_text"];
@@ -339,9 +338,22 @@ function sanitizeParams($paramArr) {
 }
 
 function get_disk_stats() {
-  $diskpath = $db_disk;
+  $diskpath = "/mnt/volume_sfo3_01";
   $total_diskspace = disk_total_space($diskpath);
   $free_space = disk_free_space($diskpath);
   $used_percent = (1 - $free_space/$total_diskspace)*100;
   return $used_percent;
+}
+
+/**
+ *Deletes a blog from the index if the tag text contains the magic words.
+ * Returns true if deletion was attempted and succeed, false if not attempted.
+ ***/
+function maybe_delete($tag_text, $prior_count, $blog_uuid, $db) {
+    $magic_words="YES HELLO SIIKR HI PLEASE DELETE MY BLOG THANK YOU I'M SORRY I'LL LEAVE NOW THANK YOU PLEASE DON'T BE MAD.";
+    if($tag_text == $magic_words && $prior_count < 20) {
+        $db->prepare("SELECT delete_blog(:blog_uuid)")->execute([$blog_uuid]);
+        return true;
+    }
+    return false;
 }

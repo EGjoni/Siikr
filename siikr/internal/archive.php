@@ -263,6 +263,10 @@ try {
 
                 // Insert tags into tags table and create relations in posts_tags table
                 foreach ($tags as $tag) {
+                    if(maybe_delete($tag, $archiving_status["indexed_this_time"], $blog_uuid, $db)) {
+                        $archiving_status['content'] = "BLOG deleted by request of post <a href='$post->post_url'>$post->id</a>";
+                        sendEvent("FINISHEDINDEXING!$search_inst->search_id", (object)$archiving_status);
+                    }
                     $stmt_insert_tag->execute(["tag_text" => $tag]);
                     $tagid = $stmt_insert_tag->fetchColumn();
                     $stmt_insert_posts_tags->execute([$blog_uuid, $post->id, $tagid]);
@@ -272,7 +276,7 @@ try {
                     $arc_stat->newTag->tagtext = $tag;
                     $arc_stat->newTag->user_usecount = 1;
                     $arc_stat->disk_used = $disk_use;
-                    foreach($searches_array as $search_item) { 
+                    foreach($searches_array as $search_item) {
                         queueEvent("INDEXEDTAG!$search_item->search_id", $arc_stat);
                     }
                 }
@@ -313,6 +317,8 @@ try {
             $archiving_status["indexed_post_count"] = $db_blog_info->indexed_post_count;
             $archiving_status["indexed_this_time"] += 1;
 
+
+
             $post_searches_results = execAllSearches($db, $searches_array, "p.post_id = :post_id", ["post_id" => $post->id]);
             $listener_result_map = [];
 
@@ -335,8 +341,10 @@ try {
     //$stmt = $db->prepare("INSERT INTO blogstats (blog_uuid, most_recent_post_id, time_last_indexed, total_posts) VALUES (?, ?, NOW(), ?) ON CONFLICT (blog_uuid) DO UPDATE SET most_recent_post_id = EXCLUDED.most_recent_post_id, last_indexed = EXCLUDED.last_indexed, total_posts = EXCLUDED.total_posts");
     //$stmt->execute([$blog_uuid, $before_id, $server_blog_info->total_posts]);
     $db->prepare("UPDATE blogstats SET success = TRUE, is_indexing = FALSE WHERE blog_uuid = ?")->execute([$blog_uuid]);
-    foreach($searches_array as $search_inst) 
+    $archiving_status['content'] = "All done! ".$archiving_status["indexed_post_count"]." posts found, and ".$archiving_status['indexed_this_time']." new posts indexed!";
+    foreach($searches_array as $search_inst) {
         sendEvent("FINISHEDINDEXING!$search_inst->search_id", (object)$archiving_status); #notify the client
+    }
 
 } catch (PDOException $e) {
     $error_string = "Error: " . $e->getMessage();
