@@ -70,43 +70,7 @@ function initializeMessageSenderSockets(ZMQSocket $socket, $persistent_id = null
  * at the very least the data that was passed into the function 
  * that fired the event. This associative array will be serialized 
  * as a JSON object when it is fired.
- * 
- * The `eventPattern` string should always begin with the operation performed (INSERT, UPDATE, DELETE),
- *   followed by an exclamation point, 
- *   followed by the table name operated upon, 
- *   followed by an exclamation point,
- *   followed by either
- *      - in the case that the operation is an UPDATE, 
- *           the primary_key of the element updated
- * 		or
- * 		- in the case that the operation is an INSERT or DELETE
- * 			 followed by the name of the most informative key of the entry just inserted,
- * 			 followed by an exclamation point,
- * 			 followed by the value of the key deemed most informative 
- * 
- * Sending messages ~~cheap~~, and so, for INSERTS where it's not clear which key should be the most inormative, 
- * it's best to fire multiple messages. One for each key.
- * 
- * For example, if we were to INSERT into the standards_placement table 
- * an entry with placement_id=12, and standard_id=7, then two messages may be fired.
- * One with the eventPattern
- * 		INSERT!standards_placement!placement_id!12
- * and another with the eventPattern 
- *  	INSERT!standards_placement!standard_id!7
- * 	
- * If no one is listening for one of the messages fired, then no harm no foul. 
- * 	
- * Ideally, any operations affecting multiple tables would send one event per table
- * modified (so that tag descriptions don't get unwieldy). And the above conventions
- * would always be followed.
- * 
- * In situations where it's preferable to send a single event about an operation 
- * across multiple tables, then, ideally: 
- *  1. Seperate events for each indivual table operated on should ALSO be sent, 
- *  2. The aggregate operation event would be identified with a tag equivalent to the function that was 
- * called to perform the operation, and the $message would still be at least the parameters to that function. 
- * 
- * Anything more complicated than that, should be discussed in advance. 
+ *
  */
 
 ?>
