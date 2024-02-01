@@ -1,7 +1,8 @@
 #!/bin/bash
+set -eo pipefail
 
-script_path=$(realpath "$0")
-script_dir=$(dirname "$script_path")
+script_path="$(realpath "$0")"
+script_dir="$(dirname "$script_path")"
 
 source "$script_dir/siikr.conf"
 
@@ -9,7 +10,7 @@ source "$script_dir/siikr.conf"
 update_install_packages() {
     echo "Install necessary packages? (y/n) [will attempt to install the default version your repos provide of php, postgres, hunspell, and certbot]"
     read confirm
-    if [[ $confirm == [yY] || $confirm == [yY][eE][sS] ]]; then
+    if [[ "$confirm" == [yY] || "$confirm" == [yY][eE][sS] ]]; then
         if sudo apt-get update && sudo apt-get install -y nginx php php-fpm php-pgsql php-zmq postgresql postgresql-contrib certbot python3-certbot-nginx hunspell hunspell-en-us; then
             echo "Packages updated and installed successfully."
         else
