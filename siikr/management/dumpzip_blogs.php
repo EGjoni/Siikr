@@ -32,9 +32,8 @@ function createFifo($fifoPath) {
 function exportData($blogInfo) {
     global $basePath, $db_name;
 
-    // Assuming $db_name is defined in 'globals.php' and accessible here
-    $username = 'eron'; // Your PostgreSQL username
-    $password = ''; // PostgreSQL password, if required
+    
+    $username = '$db_user'
 
     $post_columns = [
         "post_id", "blog_uuid", "tag_text", "post_date", "post_url",
@@ -75,7 +74,7 @@ function exportData($blogInfo) {
     return $compressedArchivePath;
 }
 
-// Main
+
 $identifiers = $argc > 1 ? array_slice($argv, 1) : [];
 if (empty($identifiers)) {
     $blogName = prompt("Enter the blog name: ");

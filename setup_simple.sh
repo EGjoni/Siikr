@@ -95,4 +95,4 @@ create_db
 set_credentials_file
 copy_data
 
-echo "Setup complete. If this script didn't work for you, please fix it and contribute back the results."
+echo "Setup complete. If this script didn't work for you, please fix it and contribute back."
