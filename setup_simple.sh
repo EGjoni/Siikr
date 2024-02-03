@@ -1,15 +1,18 @@
 #!/bin/bash
+set -eo pipefail
 
-script_path=$(realpath "$0")
-script_dir=$(dirname "$script_path")
+script_path="$(realpath "$0")"
+script_dir="$(dirname "$script_path")"
 
 source "$script_dir/siikr.conf"
 
 
 update_install_packages() {
+    local confirm
+
     echo "Install necessary packages? (y/n) [will attempt to install the default version your repos provide of php, postgres, hunspell, and certbot]"
     read confirm
-    if [[ $confirm == [yY] || $confirm == [yY][eE][sS] ]]; then
+    if [[ "$confirm" == [yY] || "$confirm" == [yY][eE][sS] ]]; then
         if sudo apt-get update && sudo apt-get install -y nginx php php-fpm php-pgsql php-zmq postgresql postgresql-contrib certbot python3-certbot-nginx hunspell hunspell-en-us; then
             echo "Packages updated and installed successfully."
         else
@@ -22,6 +25,9 @@ update_install_packages() {
 }
 
 configure_php_setup() {
+    local php_version
+    local CONF_PATH
+
     php_version=$(php -v | head -n 1 | cut -d " " -f 2 | cut -d "." -f 1,2)
     CONF_PATH=$(find /etc/php/"$php_version"/fpm/pool.d/ -name www.conf | head -1)
 
@@ -58,6 +64,8 @@ sudo systemctl start msgrouter.service
 }
 
 create_db() {
+    local confirm
+
     echo "create the siikr database? (y/n) [db will be named $siikr_db]"
     read confirm
     if [[ $confirm == [yY] || $confirm == [yY][eE][sS] ]]; then
@@ -83,8 +91,8 @@ EOF
 
 copy_data() {
     sudo cp -R "$script_dir/siikr" $document_root
-    sudo chown -R $php_user $document_root
-    sudo chgrp -R $php_user $document_root
+    sudo chown -R "$php_user" "$document_root"
+    sudo chgrp -R "$php_user" "$document_root"
 }
 
 
