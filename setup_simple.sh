@@ -51,7 +51,7 @@ StartLimitIntervalSec=0
 Type=simple
 Restart=always
 RestartSec=1
-User${php_user}
+User=${php_user}
 ExecStart=/usr/bin/php ${document_root}/routing/msgRouter.php
 
 [Install]
