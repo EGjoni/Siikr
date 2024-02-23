@@ -4,7 +4,7 @@ IYKYK.
 
 # Installation
 
-Best done on a clean server.
+Best done on a clean Ubuntu or debian server.
 
 0. clone this repo.
 1. Fill out (at a minimum) the first three lines in `siikr.conf`

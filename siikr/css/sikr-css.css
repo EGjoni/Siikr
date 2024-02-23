@@ -1324,7 +1324,7 @@ button#show-advanced {
 }
 
 #disk-use {
-    position: absolute;
+    position: fixed;
     background:#fffa;
     width: 200px;
     height: 1.5em;

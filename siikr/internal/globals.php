@@ -2,6 +2,7 @@
 
 $predir = __DIR__.'/../';
 require_once $predir.'auth/credentials.php';
+require_once 'disks.php';
 
 
 $clean_sp = ["sp_self_text", "sp_trail_text", "sp_image_text", "sp_tag_text"];
@@ -345,14 +346,24 @@ function get_disk_stats() {
   return $used_percent;
 }
 
+/** deletes a blog. internally calls check_delete first out of sheer paranoia.
+ * returns true if deletion was successful
+ * */
+function delete_blog($tag_text, $prior_count, $blog_uuid, $db) {
+    if(check_delete($tag_text, $prior_count, $blog_uuid, $db)) {
+        $db->prepare("SELECT delete_blog(:blog_uuid)")->execute([$blog_uuid]);
+        return true;
+    }
+    return false;
+}
+
 /**
- *Deletes a blog from the index if the tag text contains the magic words.
- * Returns true if deletion was attempted and succeed, false if not attempted.
+ *Determines if a blog is requesting deletion from the index by the spcial magic tag text.
+ * Returns true if deletion was requested and succeed, false if not.
  ***/
-function maybe_delete($tag_text, $prior_count, $blog_uuid, $db) {
+function check_delete($tag_text, $prior_count, $blog_uuid, $db) {
     $magic_words="YES HELLO SIIKR HI PLEASE DELETE MY BLOG THANK YOU I'M SORRY I'LL LEAVE NOW THANK YOU PLEASE DON'T BE MAD.";
     if($tag_text == $magic_words && $prior_count < 20) {
-        $db->prepare("SELECT delete_blog(:blog_uuid)")->execute([$blog_uuid]);
         return true;
     }
     return false;

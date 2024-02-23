@@ -83,7 +83,7 @@ set_credentials_file() {
 \$db_pass = '$pg_pass';
 EOF
 
-    cat > "$script_dir/siikr/internal/disk.php" << EOF
+    cat > "$script_dir/siikr/internal/disks.php" << EOF
 <?php
 \$db_disk = '$pg_disk';
 EOF

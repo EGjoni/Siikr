@@ -321,16 +321,17 @@ function updateIndexState(serverEvent) {
 	}
 	progressText.innerHTML = progressString; 
 	progressBar.style.width = (100*(eventMessage.indexed_post_count)/eventMessage.serverside_posts_reported) + " %";
-	updateDiskUseBar(serverEvent.disk_used);
+	updateDiskUseBar(eventMessage.disk_used);
 	//console.log("indexed post : " + eventMessage.indexed +"/"+eventMessage.server_total + " ----- " + eventMessage.post_id);
 }
 
 function concludeIndexState(serverEvent) {
 	var eventMessage = serverEvent.eventMessage;
 	if(eventMessage.indexed_this_time > 0) {
-		fadeStatusTextTo(`All done! `+currentResults.length+` posts found, and ` +eventMessage.indexed_this_time+` new posts indexed!`);
+		fadeStatusTextTo(eventMessage.content);
 	}
-	updateDiskUseBar(serverEvent.disk_used);
+	updateDiskUseBar(eventMessage.disk_used);
+	if(eventMessage.deleted) clearSearchResults();
  	//console.log("indexing finished!");
 }
 
