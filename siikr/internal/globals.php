@@ -368,3 +368,10 @@ function check_delete($tag_text, $prior_count, $blog_uuid, $db) {
     }
     return false;
 }
+
+/**
+ * Get a handle to the database.
+ */
+function get_db() {
+    return new PDO("pgsql:host=$db_host;dbname=$db_name", $db_user, $db_pass);
+}

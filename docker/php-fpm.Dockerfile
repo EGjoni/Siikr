@@ -50,6 +50,7 @@ RUN cat > /var/www/html/auth/credentials.php <<EOF
 \$db_name = '$POSTGRES_DB';
 \$db_user = '$POSTGRES_USER';
 \$db_pass = '$POSTGRES_PASSWORD';
+\$db_host = 'postgres';
 EOF
 
 CMD ["/usr/bin/supervisord"]
