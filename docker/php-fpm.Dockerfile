@@ -42,4 +42,14 @@ WORKDIR /var/www/html
 # Copy siikr
 COPY siikr/. /var/www/html
 
+# Create database configuration
+RUN mkdir -p /var/www/html/auth
+RUN cat > /var/www/html/auth/credentials.php <<EOF
+<?php
+\$api_key = '$tumblr_API_consumer_key';
+\$db_name = '$POSTGRES_DB';
+\$db_user = '$POSTGRES_USER';
+\$db_pass = '$POSTGRES_PASSWORD';
+EOF
+
 CMD ["/usr/bin/supervisord"]
