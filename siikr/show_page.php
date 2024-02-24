@@ -11,6 +11,8 @@ try {
 
 } catch(Exception $e){
 
+} catch(DivisionByZeroError $e) {
+
 }
 ?>
 <!DOCTYPE html>
