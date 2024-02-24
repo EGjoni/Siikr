@@ -15,7 +15,7 @@ $parser = new Parser('simple'); //fancy new abstract syntax tree parse
 $query = "websearch_to_tsquery('simple', '$raw_query')";//$parser->parse($raw_query);
 $blog_info = (object)[];
 try {
-    $db = new PDO("pgsql:dbname=$db_name", "www-data", null);
+    $db = get_db();
     $response = call_tumblr($username, "info", [], true);
     if($response->meta->status != 200) { 
         $error_string = "";

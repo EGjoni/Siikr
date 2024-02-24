@@ -2,7 +2,7 @@
 require_once 'internal/globals.php';
 $image_id = $_GET["image_id"];
 try {
-    $db = new PDO("pgsql:dbname=$db_name", "www-data", null);
+    $db = get_db();
     $get_image_stmt = $db->prepare("SELECT img_url FROM images where image_id = :image_id");
    
     $get_image_stmt->execute(["image_id" => $image_id]);

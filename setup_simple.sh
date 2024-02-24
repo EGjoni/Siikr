@@ -4,8 +4,12 @@ set -eo pipefail
 script_path="$(realpath "$0")"
 script_dir="$(dirname "$script_path")"
 
-source "$script_dir/siikr.conf"
+if [[ ! -f "$script_dir/siikr.env" ]]; then
+    echo "Could not find $script_dir/siikr.env. Make sure to copy siikr.example.env and fill it out with your deploy information."
+    exit 1
+fi
 
+source "$script_dir/siikr.env"
 
 update_install_packages() {
     local confirm
@@ -81,6 +85,7 @@ set_credentials_file() {
 \$db_name = '$siikr_db';
 \$db_user = '$pg_user';
 \$db_pass = '$pg_pass';
+\$db_host = '$pg_host';
 EOF
 
     cat > "$script_dir/siikr/internal/disks.php" << EOF
