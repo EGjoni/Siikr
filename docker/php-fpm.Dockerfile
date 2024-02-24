@@ -60,4 +60,9 @@ RUN cat > /var/www/html/auth/credentials.php <<EOF
 \$db_host = 'postgres';
 EOF
 
+RUN cat > /var/www/html/internal/disks.php <<EOF
+<?php
+\$db_disk = '$pg_disk';
+EOF
+
 CMD ["/usr/bin/supervisord"]
