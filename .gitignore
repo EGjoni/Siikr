@@ -3,3 +3,6 @@ siikr/dev/**
 siikr/auth/**
 siikr/internal/disks.php
 siikr/management/archive_blogs.php
+siikr.env
+
+postgres_data/

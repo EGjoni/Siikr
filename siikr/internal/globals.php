@@ -4,7 +4,6 @@ $predir = __DIR__.'/../';
 require_once $predir.'auth/credentials.php';
 require_once 'disks.php';
 
-
 $clean_sp = ["sp_self_text", "sp_trail_text", "sp_image_text", "sp_tag_text"];
 $clean_fp= ["fp_images", "fp_video", "fp_audio", "fp_ask", "fp_chat", "fp_link"];
 $DENUM = [
@@ -74,7 +73,7 @@ function getTextSearchString($query, $search_params, $match_condition="p.blog_uu
     $query_english = str_replace("_tsquery('simple',", "_tsquery('en_us_hunspell',", $query);
     list($weight_string, $filter_string, $image_only) = parseParams($search_params);
     if(!$image_only)
-        return getPostSearchString($query_simple, $query_english, $match_condition, $weight_string, $filter_string);
+        return getPostSearchString($query_simple, $query_english, $weight_string, $filter_string, $match_condition);
     else 
         return getImageSearchString($query, $match_condition);
 }
@@ -101,7 +100,7 @@ function getImageSearchString($query_simple, $query_english, $post_match_conditi
         )";
 }
 
-function getPostSearchString($query_simple, $query_english, $match_condition="p.blog_uuid = :q_uuid ", $weight_string, $filter_string) {
+function getPostSearchString($query_simple, $query_english, $weight_string, $filter_string, $match_condition="p.blog_uuid = :q_uuid ") {
     return "SELECT 
                 c.post_id::text, 
                 c.post_url, 
@@ -339,7 +338,9 @@ function sanitizeParams($paramArr) {
 }
 
 function get_disk_stats() {
-  $diskpath = "/mnt/volume_sfo3_01";
+  # Env var for the disk path
+  # default to /var/lib/postgresql/data
+  $diskpath = getenv('pg_disk') ?: '/var/lib/postgresql/data';
   $total_diskspace = disk_total_space($diskpath);
   $free_space = disk_free_space($diskpath);
   $used_percent = (1 - $free_space/$total_diskspace)*100;
@@ -367,4 +368,22 @@ function check_delete($tag_text, $prior_count, $blog_uuid, $db) {
         return true;
     }
     return false;
+}
+
+/**
+ * Get a handle to the database.
+ */
+function get_db($db_name, $db_user, $db_pass) {
+    global $db_host;
+    return new PDO("pgsql:host=$db_host;dbname=$db_name", $db_user, $db_pass);
+}
+
+function get_admin_db() {
+    global $db_name, $db_user, $db_pass;
+    return get_db($db_name, $db_user, $db_pass);
+}
+
+function get_app_db() {
+    global $db_name, $db_app_user, $db_app_pass;
+    return get_db($db_name, $db_app_user, $db_app_pass);
 }

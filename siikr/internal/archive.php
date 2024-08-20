@@ -2,8 +2,7 @@
 require_once 'globals.php';
 
 $archiver_uuid = uuid_create(UUID_TYPE_RANDOM);
-$userInfo = posix_getpwuid(posix_geteuid());
-$db = new PDO("pgsql:dbname=$db_name", $userInfo["name"], null);
+$db = get_db($db_name, $db_user, $db_pass);
 
 require_once 'lease.php';
 

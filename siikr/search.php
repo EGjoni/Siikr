@@ -2,7 +2,6 @@
 require_once 'internal/globals.php';
 
 $username = $_GET["username"];
-$raw_query = pg_escape_string($_GET["query"]."");
 $search_params_assoc = sanitizeParams($_GET);
 $search_params_arr = [];
 foreach($search_params_assoc as $k => $v) {
@@ -12,10 +11,11 @@ $search_params = implode(",", $search_params_arr);
 //$parsed = parseParams($search_params);
 
 $parser = new Parser('simple'); //fancy new abstract syntax tree parse
-$query = "websearch_to_tsquery('simple', '$raw_query')";//$parser->parse($raw_query);
 $blog_info = (object)[];
 try {
-    $db = new PDO("pgsql:dbname=$db_name", "www-data", null);
+    $db = get_db($db_name, $db_app_user, $db_app_pass);
+    $raw_query = $db->quote( $_GET["query"]."");
+    $query = "websearch_to_tsquery('simple', $raw_query)";//$parser->parse($raw_query);
     $response = call_tumblr($username, "info", [], true);
     if($response->meta->status != 200) { 
         $error_string = "";

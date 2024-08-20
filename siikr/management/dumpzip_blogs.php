@@ -1,8 +1,7 @@
 <?php
 
 require_once '../internal/globals.php';
-$userInfo = posix_getpwuid(posix_geteuid());
-$db = new PDO("pgsql:dbname=$db_name", $userInfo["name"], null);
+$db = get_db($db_name, $db_user, $db_pass);
 $basePath = "/mnt/volume_sfo3_01/archived/";
 
 function prompt($message) {

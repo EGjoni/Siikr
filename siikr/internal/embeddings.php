@@ -2,7 +2,6 @@
 #Experimental, don't worry about it.
 require_once 'globals.php';
 $batch_size = 10;
-$userInfo = posix_getpwuid(posix_geteuid());
 $credentials = base64_encode("$clip_host_username:$clip_host_password");
 $options = [
     'http' => [
@@ -13,7 +12,7 @@ $options = [
         'ignore_errors' => true,
     ]
 ];
-$db = new PDO("pgsql:dbname=$db_name", $userInfo["name"], null);
+$db = get_db($db_name, $db_user, $db_pass);
 
 $unembedded = $db->prepare("SELECT * FROM images WHERE clip_attempted IS NULL LIMIT 10000"); 
 $set_clip_attempted = $db->prepare("UPDATE images SET clip_attempted = now() WHERE image_id = :image_id");
