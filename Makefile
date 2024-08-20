@@ -40,6 +40,7 @@ docker-push:
 	fi; \
 	for IMAGE in $$IMAGES; do \
 		docker tag $$IMAGE ${DOCKER_REPO}:$$TAG; \
+		echo "Pushing $$IMAGE to ${DOCKER_REPO}:$$TAG"; \
 		docker push ${DOCKER_REPO}:$$TAG; \
 	done
 
