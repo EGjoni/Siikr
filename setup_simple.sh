@@ -86,6 +86,8 @@ set_credentials_file() {
 \$db_user = '$pg_user';
 \$db_pass = '$pg_pass';
 \$db_host = '$pg_host';
+\$db_app_user = '$pg_user';
+\$db_app_pass = '$pg_pass';
 EOF
 
     cat > "$script_dir/siikr/internal/disks.php" << EOF

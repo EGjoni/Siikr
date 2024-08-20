@@ -12,7 +12,7 @@ $options = [
         'ignore_errors' => true,
     ]
 ];
-$db = get_db();
+$db = get_db($db_name, $db_user, $db_pass);
 
 $unembedded = $db->prepare("SELECT * FROM images WHERE clip_attempted IS NULL LIMIT 10000"); 
 $set_clip_attempted = $db->prepare("UPDATE images SET clip_attempted = now() WHERE image_id = :image_id");

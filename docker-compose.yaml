@@ -33,6 +33,9 @@ services:
     depends_on: 
       postgres:
         condition: service_healthy
+    volumes:
+      # We run a diskspace check
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:80"]
       interval: 1m30s

@@ -13,7 +13,7 @@ $search_params = implode(",", $search_params_arr);
 $parser = new Parser('simple'); //fancy new abstract syntax tree parse
 $blog_info = (object)[];
 try {
-    $db = get_db();
+    $db = get_db($db_name, $db_app_user, $db_app_pass);
     $raw_query = $db->quote( $_GET["query"]."");
     $query = "websearch_to_tsquery('simple', $raw_query)";//$parser->parse($raw_query);
     $response = call_tumblr($username, "info", [], true);

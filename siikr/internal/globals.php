@@ -4,7 +4,6 @@ $predir = __DIR__.'/../';
 require_once $predir.'auth/credentials.php';
 require_once 'disks.php';
 
-
 $clean_sp = ["sp_self_text", "sp_trail_text", "sp_image_text", "sp_tag_text"];
 $clean_fp= ["fp_images", "fp_video", "fp_audio", "fp_ask", "fp_chat", "fp_link"];
 $DENUM = [
@@ -339,7 +338,9 @@ function sanitizeParams($paramArr) {
 }
 
 function get_disk_stats() {
-  $diskpath = "/mnt/volume_sfo3_01";
+  # Env var for the disk path
+  # default to /var/lib/postgresql/data
+  $diskpath = getenv('pg_disk') ?: '/var/lib/postgresql/data';
   $total_diskspace = disk_total_space($diskpath);
   $free_space = disk_free_space($diskpath);
   $used_percent = (1 - $free_space/$total_diskspace)*100;
@@ -372,7 +373,7 @@ function check_delete($tag_text, $prior_count, $blog_uuid, $db) {
 /**
  * Get a handle to the database.
  */
-function get_db() {
-    global $db_host, $db_name, $db_user, $db_pass;
+function get_db($db_name, $db_user, $db_pass) {
+    global $db_host;
     return new PDO("pgsql:host=$db_host;dbname=$db_name", $db_user, $db_pass);
 }

@@ -11,6 +11,8 @@ cat > /var/www/html/auth/credentials.php <<EOF
 \$db_user = '$POSTGRES_USER';
 \$db_pass = '$POSTGRES_PASSWORD';
 \$db_host = 'postgres';
+\$db_app_user = '$POSTGRES_USER';
+\$db_app_pass = '$POSTGRES_PASSWORD';
 EOF
 
 exec "$@"

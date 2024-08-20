@@ -2,7 +2,7 @@
 require_once 'internal/globals.php';
 $blog_uuid = $_GET["blog_uuid"];
 try {
-    $db = get_db();
+    $db = get_db($db_name, $db_app_user, $db_app_pass);
     $blog_info = (object)[
         "valid" => false,
         "blog_uuid" => $blog_uuid,
