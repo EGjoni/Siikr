@@ -377,3 +377,13 @@ function get_db($db_name, $db_user, $db_pass) {
     global $db_host;
     return new PDO("pgsql:host=$db_host;dbname=$db_name", $db_user, $db_pass);
 }
+
+function get_admin_db() {
+    global $db_name, $db_user, $db_pass;
+    return get_db($db_name, $db_user, $db_pass);
+}
+
+function get_app_db() {
+    global $db_name, $db_app_user, $db_app_pass;
+    return get_db($db_name, $db_app_user, $db_app_pass);
+}
