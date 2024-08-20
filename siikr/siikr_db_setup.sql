@@ -5,6 +5,10 @@
 -- Dumped from database version 14.10 (Ubuntu 14.10-0ubuntu0.22.04.1)
 -- Dumped by pg_dump version 14.10 (Ubuntu 14.10-0ubuntu0.22.04.1)
 
+
+-- TODO: BURN ME
+CREATE ROLE postgres WITH LOGIN SUPERUSER password 'postgres';
+
 SET statement_timeout = 0;
 SET lock_timeout = 0;
 SET idle_in_transaction_session_timeout = 0;

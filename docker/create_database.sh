@@ -11,7 +11,7 @@ fi
 
 source "$script_dir/siikr.env"
 
-docker-compose up -d postgres --build
+docker-compose up -d postgres
 echo "Waiting for the database to be created and to come online..."
 sleep 3
 docker-compose exec -T -u postgres postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" < "$script_dir/siikr/siikr_db_setup.sql"

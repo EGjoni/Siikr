@@ -1,3 +1,4 @@
+
 version: '3'
 
 services:
@@ -5,20 +6,32 @@ services:
     build:
       context: .
       dockerfile: docker/postgres.Dockerfile
+    image: my-postgres:latest
     env_file: 
       - siikr.env
     volumes:
-      - "./postgres_data:/var/lib/postgresql/data"
+      - postgres_data:/var/lib/postgresql/data
+      - ./siikr/siikr_db_setup.sql:/docker-entrypoint-initdb.d/01_siikr_db_setup.sql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 10s
+      retries: 5
+      start_period: 30s
+      timeout: 5s
 
   php:
     build:
       context: .
       dockerfile: docker/php-fpm.Dockerfile
+    image: my-php-fpm:latest
     ports:
       - "8080:80"
     env_file: 
       - siikr.env
     depends_on: 
-      - postgres
-    volumes:
-      - "./postgres_data:/var/lib/postgresql/data"
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+
