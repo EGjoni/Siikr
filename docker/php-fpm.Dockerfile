@@ -1,4 +1,5 @@
 FROM php:8.2-fpm
+ADD --chmod=0755 https://github.com/mlocati/docker-php-extension-installer/releases/latest/download/install-php-extensions /usr/local/bin/
 
 # Install dependencies
 RUN apt-get update && \
@@ -18,18 +19,11 @@ RUN apt-get update && \
 # TODO: choose a specific tag or commit to clone from rather than using master,
 #       for reproducible builds
 
-RUN cd /tmp && \
-    git clone "https://github.com/zeromq/php-zmq" && \
-    cd php-zmq && \
-    phpize && \
-    ./configure && \
-    make && make install && \
-    cd .. && rm -rf php-zmq
-
 # Enable PHP extensions
 RUN docker-php-ext-configure pgsql && \
     docker-php-ext-install pdo_pgsql pgsql && \
     docker-php-ext-enable pdo_pgsql pgsql && \
+    install-php-extensions zmq && \
     docker-php-ext-enable zmq
 
 # Add php-fpm config

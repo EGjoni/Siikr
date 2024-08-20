@@ -74,7 +74,7 @@ function getTextSearchString($query, $search_params, $match_condition="p.blog_uu
     $query_english = str_replace("_tsquery('simple',", "_tsquery('en_us_hunspell',", $query);
     list($weight_string, $filter_string, $image_only) = parseParams($search_params);
     if(!$image_only)
-        return getPostSearchString($query_simple, $query_english, $match_condition, $weight_string, $filter_string);
+        return getPostSearchString($query_simple, $query_english, $weight_string, $filter_string, $match_condition);
     else 
         return getImageSearchString($query, $match_condition);
 }
@@ -101,7 +101,7 @@ function getImageSearchString($query_simple, $query_english, $post_match_conditi
         )";
 }
 
-function getPostSearchString($query_simple, $query_english, $match_condition="p.blog_uuid = :q_uuid ", $weight_string, $filter_string) {
+function getPostSearchString($query_simple, $query_english, $weight_string, $filter_string, $match_condition="p.blog_uuid = :q_uuid ") {
     return "SELECT 
                 c.post_id::text, 
                 c.post_url, 
