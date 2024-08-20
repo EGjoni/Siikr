@@ -19,10 +19,8 @@ Docker gives you a clean server, but the install may be a little more involved.
 
 0. clone this repo.
 1. Make sure you have both Docker and `docker-compose` installed.
-2. Copy `siikr.example.env` to `siikr.env` and fill out (at a minimum) the first three lines.
-3. Run `docker-compose build`
-4. Create the database using `docker/create_database.sh`
-  1. TODO: Make this an entrypoint script or cron job in the helm chart
-5. Bring the service up using `docker-compose up -d`
-6. Optionally, check logs using `docker-compose logs -f`
+    1. TODO: Document how to setup the API key sanely
+2. Copy `siikr.example.env` to `siikr.env` and fill out (at a minimum) the first three lines while noticing the hardcoded postgres user siikrweb.
+3. `make build up && open localhost:8080 && make logs` - This will follow logs in the terminal and open the browser window
+4. You'll need to do some magic with DDNS for callback reasons in your router or via some other mechanism.  This is _not_ documented.  
 

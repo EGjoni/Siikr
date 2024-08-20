@@ -44,4 +44,6 @@ docker-push:
 		docker push ${DOCKER_REPO}:$$TAG; \
 	done
 
-
+.PHONY: debug
+debug:
+	docker-compose exec php bash

@@ -51,18 +51,15 @@ COPY siikr/. /var/www/html
 
 # Create database configuration
 RUN mkdir -p /var/www/html/auth
-RUN cat > /var/www/html/auth/credentials.php <<EOF
-<?php
-\$api_key = '$tumblr_API_consumer_key';
-\$db_name = '$POSTGRES_DB';
-\$db_user = '$POSTGRES_USER';
-\$db_pass = '$POSTGRES_PASSWORD';
-\$db_host = 'postgres';
-EOF
+
 
 RUN cat > /var/www/html/internal/disks.php <<EOF
 <?php
 \$db_disk = '$pg_disk';
 EOF
+
+COPY docker/entrypoint.sh /entrypoint.sh
+
+ENTRYPOINT [ "/entrypoint.sh" ]
 
 CMD ["/usr/bin/supervisord"]
