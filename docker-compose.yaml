@@ -6,6 +6,8 @@ services:
     build:
       context: .
       dockerfile: docker/postgres.Dockerfile
+      args:
+        POSTGRES_VERSION: 14
     image: my-postgres:latest
     env_file: 
       - siikr.env

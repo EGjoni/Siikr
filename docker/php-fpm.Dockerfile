@@ -28,7 +28,8 @@ RUN cd /tmp && \
 
 # Enable PHP extensions
 RUN docker-php-ext-configure pgsql && \
-    docker-php-ext-install pgsql && \
+    docker-php-ext-install pdo_pgsql pgsql && \
+    docker-php-ext-enable pdo_pgsql pgsql && \
     docker-php-ext-enable zmq
 
 # Add php-fpm config
