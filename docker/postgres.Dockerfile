@@ -1,3 +1,4 @@
-FROM postgres:16-bookworm
+ARG POSTGRES_VERSION=14
+FROM postgres:$(POSTGRES_VERSION)-bookworm
 RUN apt-get update && \
-    apt-get -y install hunspell hunspell-en-us postgresql-16-pgvector
+    apt-get -y install hunspell hunspell-en-us postgresql-$(POSTGRES_VERSION)-pgvector

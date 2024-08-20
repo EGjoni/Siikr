@@ -373,5 +373,6 @@ function check_delete($tag_text, $prior_count, $blog_uuid, $db) {
  * Get a handle to the database.
  */
 function get_db() {
+    global $db_host, $db_name, $db_user, $db_pass;
     return new PDO("pgsql:host=$db_host;dbname=$db_name", $db_user, $db_pass);
 }
