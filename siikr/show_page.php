@@ -1,14 +1,8 @@
 <?php
 $scriptVer=19;
-require_once 'internal/disks.php';
 try {
-
-    $diskpath = $db_disk;
-    $total_diskspace = disk_total_space($diskpath);
-    $free_space = disk_free_space($diskpath);
-    $used_percent = (1.0 - ($free_space/$total_diskspace))*100.0;
-    $used_percent = round($used_percent, 2);
-
+    require_once 'internal/disk_stats.php';
+    $used_percent = get_disk_stats();
 } catch(Exception $e){
 
 }

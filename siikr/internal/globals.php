@@ -2,7 +2,7 @@
 
 $predir = __DIR__.'/../';
 require_once $predir.'auth/credentials.php';
-require_once 'disks.php';
+require_once 'disk_stats.php';
 
 
 $clean_sp = ["sp_self_text", "sp_trail_text", "sp_image_text", "sp_tag_text"];
@@ -338,13 +338,7 @@ function sanitizeParams($paramArr) {
     return $sanitary;
 }
 
-function get_disk_stats() {
-  $diskpath = "/mnt/volume_sfo3_01";
-  $total_diskspace = disk_total_space($diskpath);
-  $free_space = disk_free_space($diskpath);
-  $used_percent = (1 - $free_space/$total_diskspace)*100;
-  return $used_percent;
-}
+
 
 /** deletes a blog. internally calls check_delete first out of sheer paranoia.
  * returns true if deletion was successful

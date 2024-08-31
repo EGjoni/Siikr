@@ -1,5 +1,6 @@
 <?php 
 require_once 'globals.php';
+require_once 'disk_stats.php';
 
 $archiver_uuid = uuid_create(UUID_TYPE_RANDOM);
 $userInfo = posix_getpwuid(posix_geteuid());

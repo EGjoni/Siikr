@@ -70,6 +70,7 @@ create_db() {
     read confirm
     if [[ $confirm == [yY] || $confirm == [yY][eE][sS] ]]; then
         psql -U postgres -d $siikr_db -f "$script_dir/siikr/siikr_db_setup.sql"
+        #psql -U postgres -d $siikr_db -c "ALTER ROLE $pg_user SUPERUSER;"
     fi
 }
 
@@ -86,6 +87,7 @@ EOF
     cat > "$script_dir/siikr/internal/disks.php" << EOF
 <?php
 \$db_disk = '$pg_disk';
+\$db_min_disk_headroom = '$pg_min_disk_headroom';
 EOF
 }
 
