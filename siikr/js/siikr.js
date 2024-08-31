@@ -1,6 +1,11 @@
 var href = document.location.href; 
 var currentResultsById = {};
 var currentResults = [];
+window.stateHistory = {};
+subdir = ""; //for coding on prodoction
+alwaysPrepend = ""; //this too cuz YOLO
+blogInfo = null;
+var blog_uuid = null;
 
 var sortMode = null;
 document.addEventListener("DOMContentLoaded", () => {
@@ -38,11 +43,14 @@ document.addEventListener("DOMContentLoaded", () => {
 	});
 	selectedTagContainer = document.getElementById("selected-tags"); 
 	progressContainer = document.getElementById("progress-container");
+	noticeContainer = document.getElementById("notice-container");
+	noticeLog = noticeContainer.querySelector("#notice-log");
 	statusBar = document.getElementById("progress");
 	statusText = document.getElementById("status-text"); 
 	statusText.addEventListener("transitionend", setPendingStatusText);
 	progressBar = document.getElementById("progress");
 	progressText = document.getElementById("progress-text");
+	load_more = document.getElementById("load_more");
 	
 	usernameField = document.getElementById("username");
 	queryField = document.getElementById("query");
@@ -57,27 +65,30 @@ document.addEventListener("DOMContentLoaded", () => {
 	askTemplate = templates.querySelector(".ask-box");
 
 	progressListener = getOrAddServerListenerFor(progressContainer);
+	noticeListener = getOrAddServerListenerFor(noticeContainer);
 	sortBy= document.getElementById("sort-by");
 
 	splitURL();
 	window.onpopstate = (e) => {
 		if(e.state) {
 			href = document.location.href; 
-			splitURL();
+			splitURL(e.state);
 		}
 	}
 
+	
 
-	/*window.addEventListener('message', function (e) {
-		//try {
+	window.addEventListener('message', function (e) {
+		try {
 			var parsed = JSON.parse(e.data);
 			if(parsed.src == "tumblr-parent-iframe") {
 				var iframeURL = parsed.url;
-				href = iframeURL;
-				splitURL();
+				href = document.location.href.split("?")[0]+"?"+decodeURI(iframeURL.split("?")[1]);
+				parsed.url = href;
+				splitURL(parsed);
 			}
-		//} catch(e) {}
-	});*/
+		} catch(error) {}
+	});
 });
 
 function isSubmit(event) {
@@ -90,13 +101,29 @@ function seekIfSubmit(event) {
 	}
 }
 
-function preSeek() {
+function preSeek(doAugmentFlip = true, updateURL = true, isInsuranceCheck=false, limit = 15, offset = 0) {
+	augmentExisting = doAugmentFlip;
+        prevUsername = username;
+        prevQuery = query;
+        username = usernameField.value;
+        query = queryField.value;
+        sortMode = sortBy.value;
+
+        if(prevQuery != query) {
+                augmentExisting = false;
+        }
+        if(prevUsername != username) {
+                clearSelectedTags();
+                clearBlogTags();
+                augmentExisting = false;
+        }
+
 	if(queryField.value == null || queryField.value.trim()== "") {
 		clearSearchResults();
 		fadeStatusTextTo("You have requested nothing. And I have found it.")
 	} else {
 		clearSearchResults();
-		seek();
+		seek(doAugmentFlip, updateURL, isInsuranceCheck, limit, offset);
 	}
 }
 
@@ -114,6 +141,7 @@ function clearBlogTags() {
 	blogTags = {};
 	var alltagnodes = document.querySelectorAll("#tag-filter-results .tag-autocomplete");
 	alltagnodes.forEach(tg => tg.remove());
+	setTags([]);
 }
 var prevUsername = null;
 var prevQuery = null;
@@ -131,24 +159,13 @@ setTimeout(() => {
 }, 150);
 };
 
-async function seek(doAugmentFlip = true, updateURL = true) {
-	augmentExisting = true;
-	prevUsername = username; 
-	prevQuery = query; 
+async function seek(doAugmentFlip = true, updateURL = true, isInsuranceCheck=false, limit = null, offset = 0) {
 	username = usernameField.value;
-	query = queryField.value;
-	sortMode = sortBy.value;
-	
-	/*if(prevQuery != query) {
-		augmentExisting = false;
-	}
-	if(prevUsername != username) {
-		clearSelectedTags();
-		clearBlogTags(); 
-		augmentExisting = false;
-	}*/
-		
+        query = queryField.value;
+        sortMode = sortBy.value;
+
 	lastArchivedStatus = 0;
+	previousResultCount = currentResults.length;
 	lastTotalStatus = "[computing]";
 	//progressBar.classList.remove("progress-trans");
 	progressBar.style.width = "0px"
@@ -159,48 +176,185 @@ async function seek(doAugmentFlip = true, updateURL = true) {
 			"Oh man, I can't do anything right. I'm such a failure. Now Google 
 			"will never ask me to prom.`);
 	} else {
-		if(!augmentExisting) {
+		/*if(!augmentExisting) {
 			clearSearchResults();
-		}
+		}*/
 		var reqString = "";
 		Object.keys(searchParams).forEach(key => reqString += "&"+key+"="+searchParams[key]);
-		var selectedTags = getCurrentlySelectedTags();
+		if(isInsuranceCheck) reqString += "&isInsuranceCheck=true";
+		var selectedTags = Object.keys(getCurrentlySelectedTags());
+		/*if(updateURL) {
+			updateHistoryState(currentStateToUrl(selectedTags), "push");
+		}*/
 		fadeStatusTextTo(`Searching...`);
-		var sres = await fetch("search.php?username="+username+"&query="+query+"&sortMode="+sortBy.value+reqString+"&tags="+JSON.stringify(selectedTags));
-		if(updateURL) {
-			updateCurrentUrl(selectedTags);
-		}
-		var blogInfo = await sres.json();		
-		if(blogInfo.valid) {
-			blog_uuid = blogInfo.blog_uuid;
-			search_id = blogInfo.search_id;
-			var tagres = fetch("get_tags.php?blog_uuid="+blog_uuid);
-			
-			//setTags(tagres);
-			//associatePostTags(blogInfo.results);
-			await augmentSearchResults(blogInfo.results, doAugmentFlip, getCurrentlySelectedTags());
-
-			asyncTagUpdate(tagres, blogInfo.results)
-			fadeStatusTextTo(currentResults.length +` posts found!`);
-			progressListener.removeListener("indexconclude");
-			progressListener.removeListener("indexpostupdate");
-			progressListener.removeListener("indextagupdate");
-			progressListener.setListener("indexconclude",
-				"FINISHEDINDEXING!"+search_id, {},
-				concludeIndexState
-			);
-			progressListener.setListener("indexpostupdate", 
-				"INDEXEDPOST!"+search_id, {},
-				updateIndexState
-			);
-			progressListener.setListener("indextagupdate", 
-				"INDEXEDTAG!"+search_id, {},
-				updateAvailableTags);
-		} else {
-			fadeStatusTextTo(blogInfo.display_error);
-		}
+		var sres = await s_fetch(
+			subdir+"streamed_search.php?username="+username+
+			"&query="+query+
+			"&sortMode="+sortBy.value+
+			reqString+
+			"&tags="+JSON.stringify(selectedTags), 
+			resetProgressListeners,
+			(obj)=>processSeekResult(obj, doAugmentFlip),
+			processMoreResults
+		);		
 	}
 }
+
+async function processSeekResult(blogInfoIn, doAugmentFlip) {
+	if(blogInfoIn.valid) {
+		blogInfo = blogInfoIn;
+		blog_uuid = blogInfo.blog_uuid;
+		var tagres = fetch("get_tags.php?blog_uuid="+blog_uuid);
+		
+		//setTags(tagres);
+		//associatePostTags(blogInfo.results);
+		pending_attachment_count = 0;
+		updatePendingCountHint();
+		if(blogInfo.indexed_post_count == 0 || blogInfo.indexed_post_count == null) {
+			fadeStatusTextTo("Haven't seen that blog before. Give me a sec to retrieve it. (You should see progress updates in a few seconds. Feel free to refresh the page if you get impatient)");
+		} else {
+			resetWordCloud(blog_uuid);
+			if(blogInfo.has_more) {
+				fadeStatusTextTo('More than '+ blogInfo.results.length +` posts found! (From `+blogInfo.indexed_post_count+` posts searched)`);
+			} else {
+				fadeStatusTextTo(blogInfo.results.length +` posts found! (From `+blogInfo.indexed_post_count+` posts searched)`);
+			}
+			await augmentSearchResults(blogInfo.results, doAugmentFlip, getCurrentlySelectedTags());
+			updateHistoryState(currentStateToUrl(selectedTags), blogInfo?.search_id);
+			asyncTagUpdate(tagres, blogInfo.results);
+		}
+	} else {
+		fadeStatusTextTo(blogInfo.display_error);
+	}
+}
+pending_attachment_count = 0;
+async function processMoreResults(obj) {
+	await augmentSearchResults(obj.more_results, false);
+	let progressString = '';
+	if(obj.has_more) {
+		progressString = 'More than '+ currentResults.length +` posts found! (From `+obj.indexed_post_count+` posts searched)`;
+	} else {
+		progressString = currentResults.length +` posts found! (From `+obj.indexed_post_count+` posts searched)`;
+	}
+	statusText.pendingText = progressString;
+	statusText.innerHTML = progressString;
+	pending_attachment_count += obj.more_results.length;
+	updatePendingCountHint();
+}
+
+async function resetProgressListeners(obj) {
+	search_id = obj.search_id; 
+	blogInfo = {search_id : search_id};
+
+	progressListener.removeListener("indexbegin");
+	progressListener.removeListener("indexconclude");
+	progressListener.removeListener("indexpostupdate");
+	progressListener.removeListener("indextagupdate");
+	noticeListener.removeListener("noticelistener");
+	noticeListener.removeListener("errorlistener");
+	
+	progressListener.setListener("indexbegin",
+		"INDEXNG!"+search_id, {},
+		()=>{
+			console.log("ARCHIVER STARTED");
+		}
+	);
+	progressListener.setListener("indexconclude",
+		"FINISHEDINDEXING!"+search_id, {},
+		concludeIndexState
+	);
+	progressListener.setListener("indexpostupdate", 
+		"INDEXEDPOST!"+search_id, {},
+		updateIndexState
+	);
+	progressListener.setListener("indextagupdate", 
+		"INDEXEDTAG!"+search_id, {},
+		updateAvailableTags
+	);
+	noticeListener.setListener("noticelistener", "NOTICE!"+search_id, {}, updateNoticeText);
+	noticeListener.setListener("errorlistener", "ERROR!"+search_id, {}, updateErrorText);
+}
+
+/**maintains a leader stream fetcher object. leader gets replaced by any new calls to the s_fetch(), and an old streaming fetchers halt their progress if the aren't the leader. 
+* this is so that multiple stream results don't interfere with one another.
+*/
+class SFetch {
+	static activeFetcher = null;
+	constructor(endpoint, on_search_id, on_initial_results, on_more_results) {
+		return this.do_streamed_fetch(endpoint, on_search_id, on_initial_results, on_more_results);
+	}
+
+	async do_streamed_fetch(endpoint, on_search_id, on_initial_results, on_more_results) {
+		SFetch.activeFetcher = this;
+		const response = await fetch(endpoint);
+	    const reader = response.body.getReader();
+	    const decoder = new TextDecoder('utf-8');
+		const delimiter = '#end_of_object#';
+		let accumulated_string = '';
+		let lastValid = Date.now();
+		let lastDelim = Date.now();
+		let debug_res = [];
+	    while (true) {
+	        const { done, value } = await reader.read();
+	        if(SFetch.activeFetcher != this) {
+				console.log('STREAM TERMINATED');
+				break;
+			}
+	
+	        const chunk = decoder.decode(value, { stream: true });
+			accumulated_string += chunk;
+			//console.log('chunk');
+			if(accumulated_string.lastIndexOf(delimiter) != -1) {
+				let objects = accumulated_string.split(delimiter);			
+				let hadValid = false;
+				for(let objstr of objects) {	
+					try {
+						let obj = null;
+						try{
+							obj = JSON.parse(objstr); 
+						} catch(e) {
+							e.jparseError = true;
+							throw e;
+						}
+						//console.log("object received, query_exec_time: "+obj.execution_time+"s");					
+						if(obj.valid) {
+							if(obj.blog_uuid != null && obj.results != null) {
+								//console.log("+ "+obj.results.length + ",    last_id = "+obj.results[obj.results.length-1].post_id);
+								//debug_res.push(...obj.results);
+								await on_initial_results(obj);
+							}
+							else if(obj.search_id !=null && obj.blog_uuid == null) 
+								await on_search_id(obj);
+							else if (obj.more_results != null && obj.more_results.length > 0) {
+								//console.log("+ "+obj.more_results.length + ",    last_id = "+obj.more_results[obj.more_results.length-1].post_id);
+								//debug_res.push(...obj.more_results);
+								await on_more_results(obj);
+							}
+						} else {
+							fadeStatusTextTo(obj.display_error);
+						}
+					} catch (e) {
+						if(!e.jparseError) {
+							throw e;
+						}
+						//console.log("reading: "+chunk.length);//(Date.now()-lastDelim)/1000.0+"s");					
+					}
+				}
+				accumulated_string = objects[objects.length-1];
+				if(hadValid) lastValid = Date.now();
+				lastDelim = Date.now();
+			}
+			if (done) break;
+		}
+		//console.log("GOT "+ debug_res.length + " POSTS");
+	}
+	
+}
+
+async function s_fetch(endpoint, on_search_id, on_initial_results, on_more_results) {
+	return new SFetch(endpoint, on_search_id, on_initial_results, on_more_results);
+}
+
 
 async function asyncTagUpdate(tagFetch, posts) {
 	var tres = await tagFetch;
@@ -209,15 +363,9 @@ async function asyncTagUpdate(tagFetch, posts) {
 	associatePostTags(posts, getCurrentlySelectedTags());
 }
 
-function associatePostTags(posts) {
+async function associatePostTags(posts) {
 	for(var i=0; i<posts.length; i++) {
-		try{
-			posts[i].tag_ids = JSON.parse(posts[i].tags);
-			posts[i].tags = JSON.parse(posts[i].tags);
-		} catch(e){}
-		for(var k of Object.keys(posts[i].tag_ids)) {
-			posts[i].tags[k] = blogTags[posts[i].tag_ids[k]];
-		}
+		keyifyTagObj(posts[i]);
 	}
 	for(var i=0; i< posts.length; i++) {
 		if(posts[i].element != null)
@@ -225,31 +373,58 @@ function associatePostTags(posts) {
 	}
 }
 
-async function __reSort(elem, updateURL=true, doSeek = true) {
-	sortMode = elem.value; 
+function keyifyTagObj(post) {
 	
-	var elems = []; 
-	var addedElems = {};
-	if(doSeek) 
-		await seek(false, updateURL); 
-	for(var i=0; i<currentResults.length; i++) {
-		elems.push(currentResults[i].element);
-		addedElems[currentResults[i].post_id] = currentResults[i];
+	if(typeof post?.tags == "string") {
+		post.tag_ids = typeof JSON.parse(post.tags);
+		post.tags = {};
+	} else {
+		if(Array.isArray(post.tags)) {
+			post.tag_ids = post.tags;
+		} else if(!Array.isArray(post.tag_ids)) {
+			post.tag_ids = [];
+		}
+		post.tags = {};
 	}
-	for(var i=0; i<resultContainer.children.length; i++) {
-		if(addedElems[resultContainer.children[i].result.post_id] == null)
-			elems.push(resultContainer.children[i]);
+	
+	for(var k of Object.keys(post.tag_ids)) {
+		if(post.tags == null) post.tags = {};
+		post.tags[post.tag_ids[k]] = blogTags[post.tag_ids[k]];
+	}
+}
+
+async function __reSort(sortMode, updateURL=true, doSeek = true, isInsuranceCheck=false) {
+	var elems = []; 
+	var addedElems = [];
+	var removedElems = [];
+	if(doSeek) 
+		await seek(false, updateURL, isInsuranceCheck);
+	else if(updateURL) {
+		if(!isNaN(parseInt(blogInfo?.search_id))) {
+			blogInfo.search_id = parseInt(blogInfo?.search_id);
+			blogInfo.search_id = blogInfo.search_id+"-"+sortBy.value; //invalidate the search_id without forcing a new search
+		}
+		updateHistoryState(currentStateToUrl(selectedTags), blogInfo?.search_id);
 	}
 	histSort(currentResults, sortBy.value);
+	for(var i=0; i<resultContainer.children.length; i++) {
+		elems.push(currentResults[i].element);
+		addedElems.push(currentResults[i].element);
+	}
+	for(var i=0; i<resultContainer.children.length; i++) {
+		//if(addedElems[resultContainer.children[i].result.post_id] == null)
+		elems.push(resultContainer.children[i]);
+		removedElems.push(resultContainer.children[i]);
+	}
 	var selectedTags = getCurrentlySelectedTags();
 	await flip(elems, 
 		()=>{
-			for(var i=0; i<currentResults.length; i++) { 
-				currentResults[i].element.remove();
+			for(var i=0; i<removedElems.length; i++) { 
+				removedElems[i].remove();
 			}
-			for(var i=0; i<currentResults.length; i++) { 
-				updateConstraints(currentResults[i].element, selectedTags);
-				resultContainer.appendChild(currentResults[i].element);				
+			for(var i=0; i<addedElems.length; i++) { 
+				updateConstraints(addedElems[i], selectedTags);
+				resultContainer.appendChild(addedElems[i]);				
 			}
 		},
 		{
@@ -266,9 +441,9 @@ async function __reSort(elem, updateURL=true, doSeek = true) {
  * Keeps the currentResults but executes an additional query 
  * to augment them with, and then reSorts the results with a flip animation
  */
- async function reSort(elem, updateURL=true, doSeek=true) {
+ async function reSort(sortMode, updateURL=true, doSeek=true, isInsuranceCheck=false) {
 	prevSortBy = sortMode;
-	await __reSort(elem, updateURL, doSeek);
+	await __reSort(sortMode, updateURL, doSeek, isInsuranceCheck);
 }
 
 /**sorts the result according to the specified sortMode.
@@ -282,11 +457,19 @@ function histSort(toSort, sortMode) {
 		toSort[i].prevIndex = toSort[i].appearanceIndex;
 	}
 	toSort.sort((a, b)=>{
-		if(sortMode == "score")
+		if(sortMode == "score" || sortMode == null) {
+			if(typeof a.score == "string") a.score = parseFloat(a.score);
+			if(typeof b.score == "string") b.score = parseFloat(b.score);
 			return b.score - a.score;
+		}
+		if(sortMode == "hits") {
+			if(typeof a.hit_rate == "string") a.hit_rate = parseFloat(a.hit_rate);
+			if(typeof b.hit_rate == "string") b.hit_rate = parseFloat(b.hit_rate);
+			return b.hit_rate - a.hit_rate;
+		}
 		if(sortMode == "new")
 			return Date.parse(b.post_date) - Date.parse(a.post_date);
-		else 
+		else if(sortMode == "old")
 			return Date.parse(a.post_date) - Date.parse(b.post_date);
 	});
 	for(var i=0; i<toSort.length; i++) {
@@ -294,7 +477,32 @@ function histSort(toSort, sortMode) {
 	}
 }
 
+function updateNoticeText(serverEvent) {
+	var eventMessage = serverEvent.eventMessage;
+	console.warn('SERVER NOTICE: '+eventMessage.notice);
+	if(eventMessage.resolved) {
+		noticeContainer.classList.remove("notice");
+	} else {
+		let logElem = document.createElement("div");
+		logElem.classList.add("log-entry", "notice");
+		logElem.innerText = eventMessage.notice;
+		noticeContainer.classList.add("notice");
+		noticeLog.appendChild(logElem);
+        noticeContainer.hasError = true;
+	}
+}
 
+function updateErrorText(serverEvent) {
+	var eventMessage = serverEvent.eventMessage;
+	console.error("ERROR NOTICE: "+eventMessage.notice);
+	noticeContainer.classList.add("error");
+	noticeContainer.classList.remove("notice");
+	let logElem = document.createElement("div");
+        logElem.classList.add("log-entry", "error");
+        logElem.innerText = eventMessage.notice;
+	noticeLog.appendChild(logElem);
+	noticeContainer.hasError = true;
+}
 
 function updateAvailableTags(serverEvent) {
 	var eventMessage = serverEvent.eventMessage;
@@ -305,9 +513,10 @@ function updateAvailableTags(serverEvent) {
 function updateIndexState(serverEvent) {
 	var eventMessage = serverEvent.eventMessage;
 	statusText.justSearched = false; 
+	let upgradedText = eventMessage?.upgraded? ''+eventMessage.upgraded+' posts upgraded, and ' : '';
 	var progressString = "I'm still indexing your blog: "
-					+  eventMessage.indexed_post_count + " out of " + eventMessage.serverside_posts_reported + 
-					` posts indexed so far. 
+					+upgradedText+""+eventMessage.indexed_post_count + " out of " + eventMessage.serverside_posts_reported + 
+					` posts indexed so far.
 					</br> In the meantime, I'll show you any results I come across below. </br>`;
 	if(statusText.justSearched) {
 		statusText.justSearched = false;
@@ -316,8 +525,9 @@ function updateIndexState(serverEvent) {
 		statusText.pendingText = progressString;
 		statusText.innerHTML = progressString;
 	}
-	if(eventMessage.as_search_result != null) {
-		augmentSearchResults(eventMessage.as_search_result);
+	if(eventMessage.as_search_result != null && eventMessage.as_search_result.length > 0) {
+		augmentSearchResults(eventMessage.as_search_result, false);
+		reSort(sortBy, false, false);
 	}
 	progressText.innerHTML = progressString; 
 	progressBar.style.width = (100*(eventMessage.indexed_post_count)/eventMessage.serverside_posts_reported) + " %";
@@ -325,14 +535,15 @@ function updateIndexState(serverEvent) {
 	//console.log("indexed post : " + eventMessage.indexed +"/"+eventMessage.server_total + " ----- " + eventMessage.post_id);
 }
 
-function concludeIndexState(serverEvent) {
+async function concludeIndexState(serverEvent) {
 	var eventMessage = serverEvent.eventMessage;
 	if(eventMessage.indexed_this_time > 0) {
 		fadeStatusTextTo(eventMessage.content);
+		reSort(sortBy.value, false, true, true);
 	}
 	updateDiskUseBar(eventMessage.disk_used);
 	if(eventMessage.deleted) clearSearchResults();
- 	//console.log("indexing finished!");
+	//console.log("indexing finished!");
 }
 
 
@@ -340,9 +551,21 @@ function concludeIndexState(serverEvent) {
 function clearSearchResults() {
 	currentResults = [];
 	currentResultsById = {};
+	search_id = null;
+	if(blogInfo) blogInfo.search_id = null;
 	resultContainer.innerHTML = '';
+	noticeContainer.hasError = false;
+	noticeContainer.classList.remove("error");
+	noticeContainer.classList.remove("notice");
+	noticeLog.innerText = '';
+	pending_attachment_count = 0;
+	updatePendingCountHint(false);
 }
 
+
+function collapseExpandableParent(elem) {
+	elem.closest("details").querySelector("summary").click();
+}
 
 /**
  * adds the results in the resultList to the existing results
@@ -352,16 +575,26 @@ async function augmentSearchResults(resultList, doAugmentFlip = true, currentlyS
 	var toReplace = []; //contains only new results;  
 	for(var i=0; i<resultList.length; i++) {
 		var result = resultList[i]; 
+		if(typeof result.media == "string") {
+			result.media = JSON.parse(result.media);
+			result.media_by_id = makeMediaById(result.media);
+		}
+		if(typeof result?.score == "string") result.score = parseFloat(result.score);
+		if(typeof result?.hit_rate == "string") result.hit_rate = parseFloat(result.hit_rate);
 		if(currentResultsById[result.post_id] == null) {
 			currentResultsById[result.post_id] = result; 
 			var resultElement = templateResult.cloneNode(true);
 			result.element = resultElement;
+			keyifyTagObj(result);
 			hydrateResultElement(result, resultElement); 
+			hydratePostTags(result.element);
 			updateConstraints(resultElement, currentlySelectedTags);
 			currentResults.push(result);
 			toReSort.push(result); 
 		} else if (currentResultsById[result.post_id].score != resultList[i].score) {
 			currentResultsById[result.post_id].score = resultList[i].score;
+			hydrateResultElement(result, resultElement); 
+			hydratePostTags(result.element);
 			toReplace.push(currentResultsById[result.post_id]);
 		}
 	}
@@ -373,6 +606,48 @@ async function augmentSearchResults(resultList, doAugmentFlip = true, currentlyS
 	}
 }
 
+function updatePendingCountHint(updateState = true) {
+	let pending_count_span = load_more.querySelector("#pending_count");
+	if(pending_attachment_count > 0) {
+		load_more.style.display = 'block';
+		pending_count_span.innerText = " ("+pending_attachment_count+")";
+	} else {
+		load_more.style.display = 'none';
+	}
+	if(updateState)
+		updateHistoryState(currentStateToUrl(selectedTags), blogInfo?.search_id);
+}
+
+async function attachPending(attachCount) {
+	let alreadyAttached = [];
+	let toAttach = [];
+	try {
+	currentResults.forEach(o => {
+		if(o.element.parentNode != null)
+			alreadyAttached.push(o.element);
+		else if(toAttach.length < attachCount)
+			toAttach.push(o.element);
+		else 
+			throw new Error();
+	});}catch(e) {}
+	await flip([...alreadyAttached, ...toAttach], 
+		()=>{
+			for(var i=0; i<toAttach.length; i++) { 
+				//updateConstraints(currentResults[i].element, selectedTags);
+				resultContainer.appendChild(toAttach[i]);				
+			}
+		},
+		{
+			duration: 600,                    // the length of the animation in milliseconds
+			ease: "ease",                     // the CSS timing function used for the animation
+			animatingClass: "flip-animating", // a class added to elements when they are animated
+			scalingClass: "flip-scaling",     // a class added to elements when they are scaled
+			callback: null                    // a function to call when the animation is finished
+		}		
+	);
+	pending_attachment_count -= toAttach.length;
+	updatePendingCountHint();
+}
 
 async function replaceAndResort(toReSort, toReplace) {
 	histSort(currentResults, sortBy.value);
@@ -441,21 +716,29 @@ function hydrateResultElement(data, element) {
 	var post = JSON.parse(data.blocks);
 	data.blocks = post;
 	var trailContainerElem = element.querySelector(".result-trail");
+	trailContainerElem.innerHTML = '';
 	var selfContainerElem = element.querySelector(".result-self");
-	post.trail.forEach(trailItem => {
-		trailContainerElem.appendChild(hydrateSubpost(trailItem));
-	});
-	selfContainerElem.appendChild(hydrateSubpost(post.self));
+	selfContainerElem.innerHTML = '';
+	
+	post?.trail.forEach(trailItem => {
 
-	var username_url = data.post_url.split("://")[1].split("tumblr.com"); //annoying hack but have to handle potentially changed blog names.
-	if(username_url.length != 0 && username_url !== "tumblr.com") {
-			data.post_url = "https://"+username+".tumblr.com"+(data.post_url.split(".tumblr.com")[1]);
-	}
+		trailContainerElem.appendChild(hydrateSubpost(trailItem, data.media_by_id));
+	});
+	selfContainerElem.appendChild(hydrateSubpost(post.self, data.media_by_id));
+
+	//var username_url = data.post_url.split("://")[1].split("tumblr.com"); //annoying hack but have to handle potentially changed blog names.
+	//if(username_url.length != 0 && username_url !== "tumblr.com") {
+	data.post_url = "https://"+blogInfo.name+".tumblr.com/post/"+(data.post_id);//url.split(".tumblr.com")[1]);
+	//}
 
 	element.querySelector(".external-go > a").setAttribute("href", data.post_url);
 	var date = new Date(typeof data.post_date == "number"? data.post_date*1000 : data.post_date);
-	data.post_date = date.toLocaleString();
-	element.querySelector(".from-date > a").setAttribute("href", "https://"+username+".tumblr.com/day/"+date.getFullYear()+"/"+(date.getMonth()+1)+"/"+date.getDate());
+	var dateDisplayElem = element.querySelector(".result-date");
+	dateDisplayElem.innerText = date.toLocaleString('default', { month: 'short'}) + " "+ date.getDate()+" "+date.getFullYear();
+	data.post_date = date.toLocaleString(); 
+	let calendarlink = element.querySelector(".from-date > a");
+	calendarlink.setAttribute("href", "https://"+username+".tumblr.com/day/"+date.getFullYear()+"/"+(date.getMonth()+1)+"/"+date.getDate());
+	calendarlink.setAttribute("target", "blank");
 	element.result = data;
 	//hydratePostTags(element);	
 	var resPrev = element.querySelector(".result-preview");
@@ -465,14 +748,193 @@ function hydrateResultElement(data, element) {
 	//resPrev.isObserved = true;
 }
 
-function hydrateSubpost(contentContainer) {
+function makeMediaById(medialist) {
+	let media_by_id = {};
+	medialist.forEach((m)=> {
+		m.media_meta.mtype = m.mtype;
+		m.media_meta.media_id = m.media_id;
+		m.media_meta.date_encountered = m.date_encountered; 
+		media_by_id[m.media_id] = m.media_meta;
+	});
+	return media_by_id;
+}
+
+function makeFormattedBlock(npfbloc_hard, blocknum_start, media_by_id){
+	let stmap = {
+		"h1" : ["h1 class='text-container'", "/h1"],
+		"h2" : ["h2 class='text-container'", "/h2"],
+		"quirky" : ["span style='font-style: 'cursive'", "/span"],
+		"chat" : ["div class='text-container chat'", "/div"],
+		"ind" : ["blockquote class= 'text-container indent-block'", "/blockquote"],
+		"lnk" : ["blockquote class='text-container link-block'", "/blockquote"],
+		"q" : ["blockquote class='text-container quote'", "/blockquote"],
+		"ol" : ["ol", "/ol"],
+		"ul" : ["ul", "/ul"],
+		"li" : ["li class= 'text-container'", "/li"],
+		"poll" : ["div class='poll class='text-block'", "/div"],
+		"default" :  ["div class='text-container'", "/div"]
+	}
+	let formatMap = {
+		"b" : ["b", "/b"],
+		"s" : ["small", "/small"],
+		"i" : ["i", "/i"],
+		"str" : ["strike", "/strike"],
+		"col" : ["span style='color: ", "/span"], 
+		"href" : ["a href='", "/a"],
+		"ment" : ["a class='mention' href='", "/a"]
+	}
+	function wrapFormat(block, bstringArr) {
+		let a = 1;
+		if(block.frmt == null) 
+			return; 
+		for(f of block?.frmt) {
+			if(f.t=="mention") f.t = "ment";
+			let preAdd = formatMap[f.t][0];        
+			if(f.t == "ment" || f.t == 'href') preAdd += 'https://'+f.url+"'";
+			if(f.t == "col") preAdd += f.hex+"'";
+			bstringArr[f.s].pre.push(preAdd);
+			//if(bstringArr.length <= f.e) f.e--;
+			bstringArr[f.e-1].post.push(formatMap[f.t][1]);
+		}
+	}
+	function wrapSubtype(block, bstringArr, listStack, blockNum) {
+		let st = block?.s ?? "default";
+
+		if(st=="ol" || st == "ul") {
+			if(block.il == null) block.il=1;
+			inList = false; 
+			lastListType = null;
+			if(listStack.length > 0) {
+				inList = true;
+				lastListType = listStack[listStack.length-1];
+			}
+			if(inList//if the previous entry was a list
+			&& block.s != lastListType.s //and the list type changed 
+			&& block.il == lastListType.il // but the indent_level did not.
+			) {
+				bstringArr[0].pre.push(stmap[lastListType.s][1]); //then close the old list block
+				listStack.pop(); 
+				bstringArr[0].pre.push(stmap[st][0]); //and open a new one
+				listStack.push(block);
+			} else if (
+				!inList || //if we're not in a list
+				( 	inList //or we are but
+					&& block.il > lastListType.il //the indent level increases
+				)
+			) { 
+				bstringArr[0].pre.push(stmap[block.s][0]); //then open a new list block
+				listStack.push(block);
+			} else if(
+				inList //if we're in a list
+				&& block.il < lastListType.il //and the indent level decreases
+			) {
+				let dropCount = lastListType.il - block.il;
+				for(let i =0; i<dropCount; i++) {
+					bstringArr[0].pre.push(stmap[lastListType.s][1]); //close out as many list items as we dropped indent levels
+					lastListType = listStack.pop(); 
+				}
+				bstringArr[0].pre.push(stmap[st][0]); //and open a new list block
+				listStack.push(block);
+			}
+			st = "li";
+		}
+		
+		if(st != "li") {
+			//close out the remaining lists if we're not in one;
+			let listItem = listStack.pop();
+			while(listItem != null) {
+				bstringArr[0].pre.push(stmap[listItem.s][1]);
+				listItem = listStack.pop();
+			}
+		}
+		if(st != "none") {
+			bstringArr[0].pre.push(stmap[st][0]+" data-block-num='"+blockNum+"'");
+			bstringArr[bstringArr.length-1].post.push(stmap[st][1]);
+		} 
+		
+	}
+	let contentString = "";
+	for(let i = blocknum_start; i<npfbloc_hard.length; i++) {
+		let b = npfbloc_hard[i];
+		if(b.t != "txt") break; 
+		contentString += b.c;
+	}
+	
+	
+	function mergeBlocks(decomposed) {
+		let result = "";
+		for(d of decomposed) {
+			result += "\n"+mergeSingleItem(d);
+		}
+		return result;
+	}
+	function mergeSingleItem(item){
+		let result = ""; 
+		for(c of item) {
+			for(st of c.pre) result += "<"+st+">"; 
+			result += c.inner;
+			for(et of c.post) result += "<"+et+">";
+		}
+		return result;
+	}
+	
+	
+	console.log('start');
+	let blocknum = blocknum_start;
+	let listStack = [];
+	function derecompose(npfbloc_hard) {
+		let blockCursor = 0;
+		
+		let formattedBlocks = [];	
+		for(let i=blocknum_start; i<npfbloc_hard.length; i++) {
+			let b = npfbloc_hard[i];
+			if(b.t != 'txt') break;
+			let bstringArr = [];
+			if(b.t == 'txt') {
+				if(b.c=="") bstringArr.push( {pre: [], inner: c, post: []});
+				for(c of b.c) 
+					bstringArr.push( {pre: [], inner: c, post: []});
+				
+				wrapSubtype(b, bstringArr, listStack, blocknum);
+				wrapFormat(b, bstringArr);
+				blockCursor+= b.c.length;
+			}
+			blocknum++;			
+			formattedBlocks.push(bstringArr);
+		}
+		let closer =  [{pre:[], inner: "", post:[]}]; 
+		wrapSubtype({s:"none"}, closer, listStack);//close trailing lists
+		formattedBlocks.push(closer);
+		return mergeBlocks(formattedBlocks)
+	}
+
+	let blocks_presult = derecompose(npfbloc_hard, media_by_id);
+	let blocksCont = document.createElement('span');
+	blocksCont.innerHTML = blocks_presult;
+	let allblocks = blocksCont.querySelectorAll(".text-container");
+	for(block of allblocks) {
+		npfbloc_hard[block.getAttribute("data-block-num")].elem = block;
+	}
+	return {elem : blocksCont, block_num_end: blocknum};
+}
+
+function make(imgBlock) {
+
+}
+
+function hydrateSubpost(contentContainer, mediaItems) {
 	var implicit = {};
 	var contentItems = contentContainer.content;
 	var layout = contentContainer.layout;
 	var subpost = subpostTemplate.cloneNode(true);
 	var subpostContent = subpost.querySelector(".post-content");
 	var subpostHeader =  subpost.querySelector(".user-header");
-	subpostHeader.innerText = contentContainer.by;
+	var blogIcon =  subpostHeader.querySelector(".blog-icon");
+	var blogName =  subpostHeader.querySelector(".blog-name");
+	blogIcon.setAttribute("src", "https://api.tumblr.com/v2/blog/"+contentContainer.by+".tumblr.com/avatar/32");
+	blogName.innerText = contentContainer.by;
+	let blocknum = 0;
+	let subPostItems = [];	
 	var makeblock = (content) => {
 		var tagtype = "span";
 		var tagclasses = ["text-container"];
@@ -480,58 +942,103 @@ function hydrateSubpost(contentContainer) {
 		var innercontent = null;
 		var outertagclass = "span";
 		var newnode = null;
-		var newnodeInner = null;
+		var newnodeInner = null;	
+		
 		switch(content.t) {
 			case "img":
 				tagtype = "img";
 				newnode = document.querySelector("#templates .img-container").cloneNode(true);
-				newnode.querySelector(".img-caption").innerText = content.caption;
-				newnode.querySelector("img").setAttribute("data-image-id", content.db_id);
-				newnode.querySelector("img").setAttribute("alt", content.alt);
+				let media_item = mediaItems[content.db_id];
+				newnode.querySelector(".img-caption").innerText = media_item.title;
+				//newnode.querySelector("img").setAttribute("data-image-id", content.db_id);
+				let img = newnode.querySelector("img");
+				img.setAttribute("alt", media_item.description);				
+				img.setAttribute("src", 'https://'+(media_item.preview_url != null ? media_item.preview_url : media_item.media_url));
+				img.setAttribute("data-image-id",  'https://'+media_item.media_url);
+				newnode.setAttribute("data-block-num", blocknum);
+				content.elem = newnode; 
 				break;
 			case "txt": 
-				switch(content.subtype) {
-					case "h1" : 
-					case "h2" :
-					case "ul" : 
-					case "ol" : tagtype = content.subtype; break;
+				switch(content.s) {
+					case "h1" : tagtype = "h1"; break;
+					case "h2" :  tagtype = "h2"; break;
 					case "q" : tagtype = "blockquote"; break;
 					case "quirky": tagclasses.push("quirky"); break;
-				}; 
+					case "ul" : 
+					case "ol" : //tagtype = content.subtype; break;					
+					case "ind" : tagclasses.push("indented");
+				};
 				newnode = document.createElement(tagtype);
-				newnode.classList.add(...tagclasses);
 				newnode.innerText = content.c;
+				if(subdir !="") {
+					let result = makeFormattedBlock(contentItems, blocknum, mediaItems);
+					newnode = result.elem;
+					blocknum = result.block_num_end-1;
+				} else
+					newnode.classList.add(...tagclasses);
 				break;
+			case "vid":
 			case "lnk": 
 				newnode =  document.querySelector("#templates .link-container").cloneNode(true);
-				newnode.querySelector("a").setAttribute("href", content.u);
-				newnode.querySelector("a h2").innerText = content.ttl;
-				newnode.querySelector("a span").innerText = content.d;
-			case "vid":
+				if(subdir !="" && content?.db_id != null) {
+					media = mediaItems[content.db_id];
+					newnode.querySelector("a").setAttribute("href", 'https://'+media.media_url);
+					newnode.querySelector("a h2").innerText = media.title;
+					if(media.description != null) {
+						newnode.querySelector("a span").innerText = media.description;
+					}
+					if(media.preview_url != null) {
+						let imgelem = document.createElement("img");
+						imgelem.setAttribute("loading", "lazy"); 
+						imgelem.setAttribute("src", 'https://'+media.preview_url);
+						newnode.querySelector("a span").appendChild(imgelem);
+					}
+				} else {
+					newnode.querySelector("a").setAttribute("href", content.u);
+					newnode.querySelector("a h2").innerText = content.ttl;
+					newnode.querySelector("a span").innerText = content.d;
+				}
+				newnode.setAttribute("data-block-num", blocknum); 
+				content.elem = newnode;
+				break;
 			case "aud":
 				newnode = document.querySelector("#templates .text-container").cloneNode(true);
 				newnode.innerText = "###############\
 				Video and Audio previews not yet supported :(\
-					########################";
+				(click the eye button on the right for a quick full preview)\
+					########################"; 
+				newnode.setAttribute("data-block-num", blocknum);
+				content.elem = newnode;
+				break;
+	
+		}
+
+		if(newnode == null) {
+			newnode = document.querySelector("#templates .text-container").cloneNode(true);
+			newnode.innerText = "----- THERE WAS A POLL HERE (click the eye button on the right for better previews) ----";
 		}
 		
-		content.elem = newnode;
+		blocknum++;	
+		subPostItems.push(newnode);
 	};
-	contentItems.forEach(content => makeblock(content));
+	while(blocknum <contentItems.length) {
+		makeblock(contentItems[blocknum]);
+	}
 
 	var rowblocks = (row, newPar) => {
 		
 		row.blocks.forEach(blockIdx => {
-			var content = contentItems[blockIdx];
-			newPar.appendChild(content.elem);
-			content.elem = newPar;
+			try {
+				var content = contentItems[blockIdx];
+				newPar.appendChild(content.elem);
+				content.elem = newPar;
+			} catch (e) {}
 		});
 	
 	};
 	
-	contentItems.forEach(content => {
-		if(content.elem != null)
-			subpostContent.appendChild(content.elem);
+	subPostItems.forEach(elem => {
+		subpostContent.appendChild(elem);
 	});
 
 	/**
@@ -570,10 +1077,14 @@ function hydrateSubpost(contentContainer) {
 		if(layoutInst.type == "ask") {
 			askElem = askTemplate.cloneNode(true);
 			var name = askElem.querySelector(".name-container");
-			if(layoutInst?.blog?.url != null) 
-				name.setAttribute("href", layoutInst.blog.url);
-			name.innerText = layoutInst?.blog?.name ?? "Anonymous";
-			var askContent = askElem.querySelector(".name-container");
+			var icon = askElem.querySelector(".blog-icon");
+			if(layoutInst?.attribution?.blog?.url != null) 
+				name.setAttribute("href", layoutInst?.attribution?.blog?.url);
+			if(layoutInst?.attribution?.blog?.avatar?.leghth > null) {
+				icon.setAttribute("src", layoutInst?.attribution?.blog?.avatar[3].url);
+			}
+			name.innerText = layoutInst?.attribution?.blog?.name ?? "Anonymous";
+			var askContent = askElem.querySelector(".ask-content");
 			rowblocks(layoutInst, askContent);
 			subpostContent.insertBefore(askElem, subpostContent.firstChild);
 		} else if(layoutInst.type == "rows") {
@@ -592,7 +1103,8 @@ async function loadActualImage(imgElement) {
 	if(!imgElement.loadAttempted) {
 		imgElement.loadAttempted = true; 
 		var response = await fetch('resolve_image_url.php?image_id='+image_id);
-		imgElement.src = await response.text();
+		let result = await response.text();
+		imgElement.src = 'https://'+result; 
 	}
 }
 
@@ -648,13 +1160,14 @@ function addTag(tag_id, tagtext, userUsecount, doAnim = false) {
 	}
 }
 
-function splitURL() {
-	var currentURL = new URL(href);
+function splitURL(outerState) {
+	var currentURL = new URL(outerState?.url ? outerState.url : href);
     var urlQuery = new URLSearchParams(currentURL.search);//decodeURI(href.split("?")[1]);
 
 	usernameField.value = urlQuery.get("u") ?? null;
 	queryField.value = urlQuery.get("q") ?? null;
 	prevSortBy = sortMode;
+	prevSearchParams = searchParams == null ? null : JSON.parse(JSON.stringify(searchParams));
 	if(urlQuery.get("s") != null)
 		sortBy.value = urlQuery.get("s");
 	if(urlQuery.get("tags"))
@@ -664,11 +1177,19 @@ function splitURL() {
 		if(urlQuery.get(param)) {
 			if(param.substring(0,3) == "sp_")
 				searchParams[param] = urlQuery.get(param) == "true" ? true : false;
-			else if(param.substring(0,3) == "fp_") 
-				searchParams[param] = parseInt(urlQuery.get(param));
+			else if(param.substring(0,3) == "fp_") {
+				if(param.indexOf("include_reblogs") > -1)
+					searchParams[param] = urlQuery.get(param) == "true" ? true : false;
+				else
+					searchParams[param] = parseInt(urlQuery.get(param));
+			}
 		}
 	});
 
+	//if(window.parent == window) {
+	//	window.history.replaceState({}, "Siik "+usernameField.value+"'s blog for `"+queryField.value+"`", "?"+href.split("?")[1]);
+	//	document.title = "Siik "+usernameField.value+"'s blog for `"+queryField.value+"`";
+	//}
 	setFormFromJSON(fromRequestJSON(searchParams));
     //var urlSplit = urlQuery.split(/(&?u=|&?s=|&?p=|&?q=|&?tags=)/);
     /*for(var i=0; i<urlSplit.length; i++){ 
@@ -695,27 +1216,46 @@ function splitURL() {
 			preSpecifiedTags = JSON.parse(urlSplit[i+1]);
 		}
     }*/
-	if(usernameField.value != "" && queryField.value != "") {
-		if(prevUsername != null && prevUsername != "" 
+   	let state = window.stateHistory[outerState?.search_id];
+   	if(state == null) state = outerState?.state;
+	if(state?.search_id && state?.blog_uuid && state?.display && Object.keys(state?.display).length > 0) {
+		if(Object.keys(state?.display).length > 0) {
+			clearSearchResults();
+			restoreResultsFromState(state);
+			//updateHistoryState(currentStateToUrl(selectedTags), blogInfo?.search_id);
+		}
+	} else if(usernameField.value != "" && queryField.value != "") {
+		if(usernameField.value == prevUsername && 
+		queryField.value == prevQuery && 
+		JSON.stringify(prevSearchParams) == JSON.stringify(searchParams) &&
+		prevUsername != null && prevUsername != "" 
 		&& prevQuery != null && prevQuery != ""
 		&& prevSortBy != null && prevSortBy != sortBy.value) {
-			__reSort(sortBy.value, false);
+			reSort(sortBy.value, false);
+			updateHistoryState(currentStateToUrl(selectedTags), blogInfo?.search_id);
 		} else {
-			seek(true, false);
+			preSeek(true, false, false, 50);
 		}
 	}
 }
 
-function updateCurrentUrl(selectedTags = null) {
+function currentStateToUrl(selectedTags = null) {
 	var glue = "?";
 	var urlPath = "";
+	if(alwaysPrepend != "") {
+		urlPath += alwaysPrepend;
+		glue = "&";
+	}
+	var newTitle = "Siik ";
 	if(usernameField.value != null) {
 		urlPath += glue+"u="+usernameField.value;
 		glue = "&";
+		newTitle += usernameField.value + "'s blog ";
 	}
 	if(queryField.value != null) {
 		urlPath += glue+"q="+queryField.value;
 		glue = "&";
+		newTitle += "for `"+queryField.value+"`"
 	}
 
 	if(sortBy.value != null) {
@@ -733,13 +1273,121 @@ function updateCurrentUrl(selectedTags = null) {
 		urlPath += glue+"tags="+JSON.stringify(selectedTags);
 		glue = "&";
 	}
+
 	
-	window.history.pushState({},"", urlPath);
-	window.parent.postMessage(JSON.stringify({src: "siikr", url: urlPath}), '*');
+	let patharged = "?"+decodeURI(urlPath.split("?")[1]);
+	let currUrl = "?"+decodeURI(document.location.href.split("?")[1]);
+
+	return urlPath;
+	
+	//if(currUrl != patharged && window.parent == window) { //no back buttons in an iframe
+	//	window.history.pushState({},newTitle, urlPath);
+	//	document.title = newTitle;
+	//}
+	//tumblr outer page can take care of deciding whether to update its url
+	//window.parent.postMessage(JSON.stringify({src: "siikr", url: urlPath, title: newTitle}), '*');
+	//updateHistoryState();
+}
+
+var messagePostTimer = -1;
+var messageQ = {};
+
+function updateHistoryState(urlPath = null, updates_search_id = null) {
+
+	let attached = {};
+	let pendingAttach = {};
+	let title = usernameField.value?.length > 0 ? "Siikr "+usernameField.value+"'s blog for '"+queryField.value+"'" : document.title;
+	document.title = title;
+	currentResults.forEach(r => {
+		if(r.element.parentNode != null) {
+			attached[r.post_id] = r.score;
+		} else {
+			pendingAttach[r.post_id] = r.score;
+		}
+	});
+	let currentState = {
+		display: attached,
+		pending: pendingAttach,
+		blog_uuid: blog_uuid == undefined ? null : blog_uuid, 
+		blogInfo: {"blog_uuid": blogInfo?.blog_uuid, "search_id": blogInfo?.search_id, "blog_name": blogInfo?.name, 
+			"avatar": blogInfo?.avatar
+		}
+	}
+
+	let args = urlPath?.length > 0 ? urlPath : document.location.href;
+	let postq = args.split("?");
+	if(postq.length>1) args = postq[1];
+
+	let stateObj = {
+		state: currentState,
+        url:  args?.length > 0 ? "?"+args : "",
+		title: document.title
+	}
+	stateObj.state.search_id = updates_search_id;
+
+	if(updates_search_id == null || window.stateHistory[updates_search_id] == null) {
+		if(window.parent != window) {
+			let prevTimerId = messagePostTimer;
+			messageQ = {};
+			window.parent.postMessage(JSON.stringify({
+					src: "siikr",
+					search_id: updates_search_id,
+					state: stateObj.state,
+					url: stateObj.url,
+					title: stateObj.title
+			}), '*');
+		} else {
+			window.history.pushState(stateObj.state, '', stateObj.url); 
+		}
+	} 
+	if(updates_search_id != null) {
+		let existing = window.stateHistory[updates_search_id];
+		//only ever add values
+		window.stateHistory[updates_search_id] = deepMerge(existing, stateObj.state);
+	}
 }
 
 
+async function restoreResultsFromState(state) {
+	if(state?.blog_uuid != null && state?.display && Object.keys(state?.display)?.length > 0) {
+		let initialResults = fetch('repop.php', 
+			{
+    			method: 'POST', headers: {'Content-Type': 'application/json'},
+    			body: JSON.stringify({
+					blogInfo : state.blogInfo,
+					posts : state.display
+				})
+			}
+		);
+		let moreResults = async ()=>{{}};
+		if(Object.keys(state?.pending)?.length > 0) {
+			moreResults = fetch('repop.php',
+				{
+						method: 'POST', headers: {'Content-Type': 'application/json'},
+						body: JSON.stringify({
+							blogInfo : state.blogInfo,
+							posts : state.display
+						})
+				}
+			);
+		}
+		initialResults = await initialResults;
+		await processSeekResult(await initialResults.json());
+		if(Object.keys(state?.pending)?.length > 0) {
+			let otherResults = await moreResults;
+			otherResults = await otherResults.json();
+			if(otherResults?.results?.length>0) {
+				otherResults.more_results = otherResults.results;
+				processMoreResults(otherResults);
+			}
+		}
+	}
+}
 
+//updates statustext without fading
+function setStatusTextTo(text) {
+	
+}
 function fadeStatusTextTo(text) {
 	statusText.pendingText = text;
 	statusText.classList.add("fadeout");
@@ -815,7 +1463,7 @@ function addToHydrationQueue(elem) {
 	var doHydrate = async (elem) => {
 		var resultElem = elem.parentNode;
 		var data = resultElem.result;
-		var post_url = data.post_url;	
+		//var post_url = data.post_url;	
 		var sres = await fetch("getIframe.php?post_id="+data.post_id+"&blog_uuid="+blog_uuid);//$post_url"
 		var tumeblrData = await sres.json();
 		var tumblhtml = tumeblrData.html;
@@ -922,4 +1570,23 @@ threshold: [0.01]
 	promise.reject = rej;
 
 	return promise;
+}
+
+
+function deepMerge(a, b) {
+    const result = { ...a };
+    for (const key in b) {
+        if (b.hasOwnProperty(key)) {
+            if (typeof b[key] === 'object' && b[key] !== null && !Array.isArray(b[key])) {
+                if (result.hasOwnProperty(key)) {
+                    result[key] = deepMerge(result[key], b[key]);
+                } else {
+                    result[key] = deepMerge({}, b[key]);
+                }
+            } else {
+                result[key] = b[key];
+            }
+        }
+    }
+    return result;
 }

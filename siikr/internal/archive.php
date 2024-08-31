@@ -4,7 +4,7 @@ require_once 'disk_stats.php';
 
 $archiver_uuid = uuid_create(UUID_TYPE_RANDOM);
 $userInfo = posix_getpwuid(posix_geteuid());
-$db = new PDO("pgsql:dbname=$db_name", $userInfo["name"], null);
+$db = new SPDO("pgsql:dbname=$db_name", $userInfo["name"], null);
 
 require_once 'lease.php';
 
@@ -17,19 +17,17 @@ $blog_uuid = null;
 if($argc > 1) $search_id = $argv[1];
 
 $current_blog = $db->prepare("SELECT blog_uuid FROM active_queries WHERE search_id = ? LIMIT 1");
-$current_blog->execute([$search_id]);
-$blog_uuid = $current_blog->fetchColumn();
-if(!renewOrStealLease($db, $blog_uuid, $archiver_uuid)) {
-    exit;
-}
+$blog_uuid = $current_blog->exec([$search_id])->fetchColumn();
+$establishLease->exec([$blog_uuid, $archiver_uuid]); //defined in lease.php
+$get_active_queries = $db->prepare("SELECT * FROM active_queries WHERE blog_uuid = :blog_uuid"); 
+$searches_array = $get_active_queries->exec(["blog_uuid" => $blog_uuid])->fetchAll(PDO::FETCH_OBJ);
 
 $stmt_select_blog = $db->prepare("SELECT * FROM blogstats WHERE blog_uuid = ?");
-$stmt_select_blog->execute([$blog_uuid]);
-$db_blog_info = $stmt_select_blog->fetch(PDO::FETCH_OBJ);
+$db_blog_info = $stmt_select_blog->exec([$blog_uuid])->fetch(PDO::FETCH_OBJ);
+$db_blog_info->index_request_count += 1;
+$db->prepare("UPDATE blogstats SET index_request_count = ? WHERE blog_uuid = ?")->exec([$db_blog_info->index_request_count, $blog_uuid]);
+$resolve_queries = $db->prepare("DELETE FROM active_queries WHERE blog_uuid = :blog_uuid"); 
 
-$get_active_queries = $db->prepare("SELECT * FROM active_queries WHERE blog_uuid = :blog_uuid");
-$get_active_queries->execute(["blog_uuid" => $blog_uuid]); 
-$searches_array = $get_active_queries->fetchAll(PDO::FETCH_OBJ);
 
 $zmqsock_identifier = $archiver_uuid; #each archiver_instance gets their own zmq socket for update broadcasts
 require_once $predir.'/internal/messageQ.php';
@@ -37,12 +35,13 @@ require_once $predir.'/internal/messageQ.php';
 $blog_name = $db_blog_info->blog_name;
 if($blog_name) {
     $server_blog_info = &call_tumblr($db_blog_info->blog_name, "info")->blog;
-    $blog_uuid =  $server_blog_info->uuid;
 } else {
+    $resolve_queries->execute(["blog_uuid" => $blog_uuid]);
+    $abandonLease->execute(["leader_uuid" => $archiver_uuid]);
     die("Error: no name given"."\n");
 }
 
-$archiving_status = [
+$archiving_status = (object)[
     "blog_uuid" => $blog_uuid, 
     "blog_name" => $blog_name, 
     "as_search_result" => [],
@@ -50,7 +49,17 @@ $archiving_status = [
     "indexed_post_count" => &$db_blog_info->indexed_post_count,
     "indexed_this_time" => 0];
 
-sendEvent("INDEXING!$search_id", (object)$archiving_status); //broadcast a zmq message for anyone interested to know about the blog indexing status.
+if(!ensureSpace($db, $db_blog_info, $server_blog_info)) {
+    $resolve_queries->execute(["blog_uuid" => $blog_uuid]);
+    $abandonLease->execute(["leader_uuid" => $archiver_uuid]);
+    $archiving_status->notice = "Siikr is nearly out of disk space and this blog would make it die. For the good of many, it must sacrifice the few. (i.e you).";
+    sendEventToAll($searches_array, 'NOTICE!', $archiving_status);
+    die("Error: insufficient disk space");
+}
+
+
+
+sendEvent("INDEXING!$search_id", $archiving_status); //broadcast a zmq message for anyone interested to know about the blog indexing status.
 
 
 function extract_blocks_from_content($content, &$soFar, $mode=0b01) {
@@ -96,8 +105,6 @@ function extract_blocks_from_content($content, &$soFar, $mode=0b01) {
     return implode("\n", $text_content);
 }
 
-$resolve_queries = $db->prepare("DELETE FROM active_queries WHERE blog_uuid = :blog_uuid"); 
-
 
 function extract_text_from_post($post) {
     $soFar = 
@@ -134,262 +141,330 @@ function extract_text_from_post($post) {
 try {
     $before_id = null;
     $stmt_update_blog = $db->prepare(
-        "UPDATE blogstats SET most_recent_post_id = :runstart_post_id, 
-                        post_id_last_indexed = :post_id, 
-                        post_id_last_attempted = :post_id, 
+        "UPDATE blogstats SET most_recent_post_id = :most_recent_post_id, 
+                        post_id_last_indexed = :post_id_successfully_indexed, 
+                        post_id_last_attempted = :post_id_successfully_indexed, 
                         indexed_post_count = :indexed_count,
                         serverside_posts_reported = :serverside_posts_reported,
                         time_last_indexed = now(),
-                        success = :success, is_indexing = :is_indexing WHERE blog_uuid = :blog_uuid");
+                        success = :success, 
+                        is_indexing = :is_indexing WHERE blog_uuid = :blog_uuid");
     $stmt_update_blogstat_count = $db->prepare(
-        "UPDATE blogstats SET most_recent_post_id = :runstart_post_id,
-                        post_id_last_attempted = :post_id, 
+        "UPDATE blogstats SET most_recent_post_id = :most_recent_post_id,
+                        post_id_last_attempted = :post_id_last_attempted, 
                         indexed_post_count = :indexed_count,
                         serverside_posts_reported = :serverside_posts_reported,
                         success = :success, 
                         is_indexing = :is_indexing WHERE blog_uuid = :blog_uuid");
+
+    //SELECT merge_tsvector_json(:texts::jsonb) AS tsvector_result
     $stmt_insert_post = $db->prepare(
-        "INSERT INTO posts (post_id, blog_uuid, post_date, post_url, slug, blocks, 
-                            simple_ts_vector, english_ts_vector,
+        "INSERT INTO posts (post_id, blog_uuid, post_date, post_url, 
+                            slug, blocks, simple_ts_vector, english_ts_vector,
                             tag_text, has_text, has_link, has_chat, has_ask, has_images, has_video, has_audio) 
-                    VALUES (:post_id, :blog_uuid, :post_date, :post_url, :slug, :blocks, 
-                    setWeight(to_tsvector('simple', :vec_tags), 'A') || setWeight(to_tsvector('simple', :self_text), 'B') || setWeight(to_tsvector('simple', :trail_text), 'C') || setWeight(to_tsvector('simple', :image_text), 'D'),
-                    setWeight(to_tsvector('en_us_hunspell', :vec_tags), 'A') || setWeight(to_tsvector('en_us_hunspell', :self_text), 'B') || setWeight(to_tsvector('en_us_hunspell', :trail_text), 'C') || setWeight(to_tsvector('en_us_hunspell', :image_text), 'D'),
-                            :raw_tags, :has_text, :has_link, :has_chat, :has_ask, :has_images, :has_video, :has_audio)");
+                    VALUES (:post_id, :blog_uuid, to_timestamp(:post_date), :post_url,
+                        :slug, :blocks, setWeight(to_tsvector('simple', :vec_tags), 'A') || setWeight(to_tsvector('simple', :self_text), 'B') || setWeight(to_tsvector('simple', :trail_text), 'C') || setWeight(to_tsvector('simple', :image_text), 'D'),
+                        setWeight(to_tsvector('en_us_hunspell', :vec_tags), 'A') || setWeight(to_tsvector('en_us_hunspell', :self_text), 'B') || setWeight(to_tsvector('en_us_hunspell', :trail_text), 'C') || setWeight(to_tsvector('en_us_hunspell', :image_text), 'D'), :raw_tags, :has_text, :has_link, :has_chat, :has_ask, :has_images, :has_video, :has_audio)
+                    --VALUES (:post_id, :blog_uuid, to_timestamp(:post_date), :post_url,          
+                    -- following two lines are for after reworking the indexing schema and will replace the above two lines
+                    --  :slug, :blocks, setWeight(to_tsvector('simple', :vec_tags), 'A') || setWeight(to_tsvector('simple', :self_text), 'B') || setWeight(to_tsvector('simple', :trail_text), 'C') || setWeight(to_tsvector('simple', :username_text), 'D'),
+                    --   setWeight(to_tsvector('en_us_hunspell', :vec_tags), 'A') || setWeight(to_tsvector('en_us_hunspell', :self_text), 'B') || setWeight(to_tsvector('en_us_hunspell', :trail_text), 'C') || setWeight(to_tsvector('en_us_hunspell', :username_text), 'D'),
+                            ");
     $stmt_insert_tag = $db->prepare("INSERT INTO tags (tag_name, tag_simple_ts_vector) VALUES (:tag_text, to_tsvector('simple', :tag_text)) ON CONFLICT (tag_name) DO UPDATE SET tag_name = Excluded.tag_name RETURNING tag_id");
     $stmt_insert_posts_tags = $db->prepare("INSERT INTO posts_tags (blog_uuid, post_id, tag_id) VALUES(?, ?, ?) ON CONFLICT DO NOTHING");
     $stmt_insert_image = $db->prepare("INSERT INTO images (img_url, caption_vec, alt_text_vec) VALUES (:img_url, setWeight(to_tsvector('simple', :caption), 'A') || setWeight(to_tsvector('en_us_hunspell', :caption), 'B'), setWeight(to_tsvector('simple', :alt_text), 'A') || setWeight(to_tsvector('en_us_hunspell', :alt_text), 'B')) ON CONFLICT (img_url) DO UPDATE SET img_url = Excluded.img_url RETURNING image_id");
     $stmt_insert_posts_images = $db->prepare("INSERT INTO images_posts (post_id, image_id) VALUES (?, ?) ON CONFLICT DO NOTHING");
-    $stmt_give_up = $db->prepare("SELECT post_id FROM posts where blog_uuid = :blog_uuid ORDER BY post_date ASC LIMIT 1");
-    $post_check_stmt = $db->prepare(getTextSearchString($search_query, "p.post_id = :post_id"));
-  
-
+    $get_oldest_indexed_post = $db->prepare("SELECT post_id FROM posts where blog_uuid = :blog_uuid ORDER BY post_date ASC LIMIT 1");
+    
+    $stmt_get_post_info = $db->prepare("SELECT post_id as id, EXTRACT(epoch FROM post_date)::INT as timestamp FROM posts where post_id = :post_id");
+    //$post_check_stmt = $db->prepare(getTextSearchString($search_query, "p.post_id = :post_id"));
+    $set_blog_success_status = $db->prepare("UPDATE blogstats SET success = ?, is_indexing = FALSE WHERE blog_uuid = ?");
+    
     // Get the most_recent_post_id and post_id_last_indexed from the blogstats table
-    $stmt_select_blog->execute([$blog_uuid]);
-    $db_blog_info = $stmt_select_blog->fetch(PDO::FETCH_OBJ);
     $most_recent_post_id = $db_blog_info->most_recent_post_id;
-    $post_id_last_indexed = $db_blog_info->post_id_last_indexed;
-    $post_id_last_attempted = $db_blog_info->post_id_last_attempted;
-    $db_blog_info->index_request_count = $db_blog_info->index_request_count + 1;
-    $jump_triggered = false;
-    $error_count = 0;
+    if($db_blog_info->time_last_indexed != null) {
+        $post_id_last_indexed = $db_blog_info->post_id_last_indexed;
+        $post_id_last_attempted = $db_blog_info->post_id_last_attempted;
+        //next line is for debug. delete when done.
+        //$smallest_post_id_indexed_info = $db->prepare("SELECT post_id, EXTRACT(epoch FROM post_date)::INT as timestamp FROM posts where blog_uuid = :blog_uuid ORDER BY post_id ASC LIMIT 1")->exec([$blog_uuid])->fetch(PDO::FETCH_OBJ);
+        $oldest_post_id_indexed =  $get_oldest_indexed_post->exec(["blog_uuid"=>$blog_uuid])->fetchColumn();
 
-    $run_start_post_id = null;
-    $stmt = $db->prepare("INSERT INTO blogstats (blog_uuid, index_request_count) VALUES (?, ?) 
-                        ON CONFLICT (blog_uuid) 
-                        DO UPDATE SET index_request_count = EXCLUDED.index_request_count")->execute([$blog_uuid, $db_blog_info->index_request_count]);
+        $most_recent_post_info = $stmt_get_post_info->exec([$most_recent_post_id])->fetch(PDO::FETCH_OBJ);
+        if($post_id_last_indexed == null) $post_id_last_indexed = $oldest_post_id_indexed->post_id;
+        $post_last_indexed_info = $stmt_get_post_info->exec([$post_id_last_indexed])->fetch(PDO::FETCH_OBJ);
+        $post_last_attempted_info = $stmt_get_post_info->exec([$post_id_last_attempted])->fetch(PDO::FETCH_OBJ);
+        $oldest_post_indexed_info = $stmt_get_post_info->exec([$oldest_post_id_indexed])->fetch(PDO::FETCH_OBJ);
+    }
+    
+    $oldest_server_post = call_tumblr($blog_name, 'posts', ['limit' => 1, 'npf' => 'true', 'sort' => 'asc'])->posts[0];
+    
+    $loop_count = 0;
+
+
+    /**LOGIC: 
+     * 
+     * Create a queue of potential gaps (posts before which we might be missing some post), with null indicating we wish to begin from the very most recent post.
+     * 
+     * If tumblr ever responds that there are no earlier posts, or we encounter a post we already indexed, pop the queue to begin indexing from the next gap 
+    */
+    $gap_queue = [null];
+    if($oldest_post_id_indexed != null) 
+        array_push($gap_queue, $oldest_post_indexed_info);
+    if($db_blog_info->success == false && $post_id_last_indexed != $oldest_post_id_indexed) 
+        array_push($gap_queue, $post_last_indexed_info);
+    $max_loop_count = count($gap_queue) * 2;
+    $response_post_num = 0;
     do {
-        $disk_use = get_disk_stats();
-        $params = ['limit' => 50, 'npf' => 'true', 'before_id' => $before_id];
-        $server_blog_info = call_tumblr($blog_name, 'posts', $params);
-        if($run_start_post_id == null) $run_start_post_id = $server_blog_info->posts[0]->id_string;
-
-        foreach ($server_blog_info->posts as $post) {
-            $post->id = $post->id_string;
-            if(!renewOrStealLease($db, $blog_uuid, $archiver_uuid)) {
-                exit;
-            }
-            $get_active_queries->execute(["blog_uuid" => $blog_uuid]);
-            $searches_array = $get_active_queries->fetchAll(PDO::FETCH_OBJ);
-            $stmt_select_blog->execute([$blog_uuid]);
-            $requestcheck = $stmt_select_blog->fetch(PDO::FETCH_OBJ)->index_request_count;
-            if($db_blog_info->index_request_count > $requestcheck){
-                die("Being replaced by new archive request");
-            }
-            $before_id = $post->id;
-            // If the post is older than the post we began the last run with, skip over to posts older than the one we ended the last run with
-            if ($most_recent_post_id != null && $post_id_last_attempted != null && $before_id <= $most_recent_post_id && $before_id >= $post_id_last_attempted) {
-                if($post_id_last_indexed < $post_id_last_attempted) 
-                    $post_id_last_attempted = $post_id_last_indexed;
-                $before_id = $post_id_last_attempted;
-                break;
-            }
-
-            $db_post_obj = extract_text_from_post($post);
-            $tags = $post->tags;
+        $before_info = array_pop($gap_queue);
+        $before_time = $before_info == null? null:$before_info->timestamp;
+        $before_id = $before_info->id;
+        do {
+            $disk_use = get_disk_stats();        
+            $params = ['limit' => 50, 'npf' => 'true', 'before' => $before_time, 'sort' => 'desc'];
+            $server_blog_info = call_tumblr($blog_name, 'posts', $params);
             
-            if($jump_triggered || $post_id_last_attempted == null) {
-                $post_id_last_attempted = $before_id;
-            }
-            try {
-                $stmt_update_blogstat_count->execute([
-                    "runstart_post_id" => $run_start_post_id, 
-                    "post_id" => $post_id_last_attempted, 
-                    "indexed_count" => $db_blog_info->indexed_post_count,
-                    "serverside_posts_reported" => $server_blog_info->total_posts,
-                    "is_indexing" => 'TRUE', 
-                    "success" => 'FALSE', 
-                    "blog_uuid" => $blog_uuid]);
-                $db->beginTransaction();
-                // Insert post into posts table
-                $tag_rawtext = implode('\n#', $tags);
-                if(strlen($tag_rawtext) > 0) $tag_rawtext = "#$tag_rawtext";
-                $tag_tstext = implode('\n', $tags);
-
-                foreach ($db_post_obj->images as &$img) {
-                    $image = (object)$img;
-                    $alt_text = $image->alt_text ?? null;
-                    $caption = $image->caption ?? null;
-                    $will_insert = ["img_url" => $image->url, "caption"=> $caption,  "alt_text" => $alt_text];
-                    $stmt_insert_image->execute($will_insert);
-                    $image_id = $stmt_insert_image->fetchColumn();
-                    $img["db_id"] = $image_id;
+            foreach ($server_blog_info->posts as $post) {
+                $post->id = $post->id_string;
+                if($most_recent_post_id == null || $post->timestamp > $most_recent_post_info->timestamp) {
+                    $most_recent_post_id = (int)$post->id;
+                    $most_recent_post_info = $post;
                 }
-            
-                list($transformed, $for_db) = transformNPF($post, $db_post_obj->images);
-
-                $stmt_insert_post->execute(
-                    ["post_id" =>$post->id, 
-                    "post_url" => $post->post_url,
-                    "slug" => $post->slug,
-                    "blog_uuid"=>$blog_uuid, 
-                    "post_date"=>$post->date,
-                    "blocks" => json_encode($transformed),
-                    "self_text" => $for_db->self, 
-                    "trail_text" => $for_db->trail,
-                    "image_text" => $for_db->images,
-                    "has_text" => $DENUM[$db_post_obj->has_text],
-                    "has_link" => $DENUM[$db_post_obj->has_link],
-                    "has_chat" => $DENUM[$db_post_obj->has_chat],
-                    "has_ask" => $DENUM[$db_post_obj->has_ask],
-                    "has_images" => $DENUM[$db_post_obj->has_images],
-                    "has_video" => $DENUM[$db_post_obj->has_video],
-                    "has_audio" => $DENUM[$db_post_obj->has_audio],
-                    "raw_tags" => $tag_rawtext, 
-                    "vec_tags" => $tag_tstext]);
-
-                foreach ($db_post_obj->images as &$img) {
-                    $stmt_insert_posts_images->execute([$post->id, $image_id]);
-                }
-
-                // Insert tags into tags table and create relations in posts_tags table
-                foreach ($tags as $tag) {
-                    if(check_delete($tag, $archiving_status["indexed_this_time"], $blog_uuid, $db)) {
-                        $archiving_status['disk_used'] = $disk_use;
-                        $archiving_status['content'] = "Deleting blog by request of post <a href='$post->post_url'>$post->id</a>, please wait...";
-                        sendEvent("FINISHEDINDEXING!$post_result_cont->search_id", (object)$archiving_status);                  
-                        delete_blog($tag, $archiving_status["indexed_this_time"], $blog_uuid, $db);
-                        $archiving_status['content'] = "Blog deleted. Goodbye.";
-                        $archiving_status['deleted'] = true;                       
-                        sendEvent("FINISHEDINDEXING!$post_result_cont->search_id", (object)$archiving_status);
-                        $db->commit();
-                        exit;
-                    }
-                    $stmt_insert_tag->execute(["tag_text" => $tag]);
-                    $tagid = $stmt_insert_tag->fetchColumn();
-                    $stmt_insert_posts_tags->execute([$blog_uuid, $post->id, $tagid]);
-                    $arc_stat = (object)$archiving_status;
-                    $arc_stat->newTag = (object)[]; 
-                    $arc_stat->newTag->tag_id = $tagid;
-                    $arc_stat->newTag->tagtext = $tag;
-                    $arc_stat->newTag->user_usecount = 1;
-                    $arc_stat->disk_used = $disk_use;
-                    foreach($searches_array as $search_item) {
-                        queueEvent("INDEXEDTAG!$search_item->search_id", $arc_stat);
-                    }
+                if($oldest_post_id_indexed == null || $post->timestamp < $oldest_post_indexed_info->timestamp) {
+                    $oldest_post_id_indexed = (int)$post->id;
+                    $oldest_post_indexed_info = $post;
                 }
                 
-                $db_blog_info->indexed_post_count += 1;
-                $stmt_update_blogstat_count->execute(
-                    [$run_start_post_id, 
-                    $before_id, 
-                    $db_blog_info->indexed_post_count, 
-                    $server_blog_info->total_posts, 
-                    'TRUE', 'TRUE', $blog_uuid]);
-                $db->commit();
-            } catch (Exception $e) {
-                $db->rollBack(); 
-                $error_count++;
-                if($e->getCode() == "23505") {
-                    $jump_triggered = true;
-                    if($error_count > 50) {
-                        $stmt_give_up->execute(["blog_uuid" => $blog_uuid]); 
-                        $before_id = $stmt_give_up->fetchColumn();
-                        break;
-                    } else if ($error_count > 150) {
-                        break 2;
+                if(!amLeader($db, $blog_uuid, $archiver_uuid)) {
+                    $resolve_queries->execute(["blog_uuid" => $blog_uuid]);
+                    $abandonLease->execute(["leader_uuid" => $archiver_uuid]);
+                    exit;
+                }
+                $get_active_queries->execute(["blog_uuid" => $blog_uuid]);
+                $searches_array = $get_active_queries->fetchAll(PDO::FETCH_OBJ);
+                
+                $post_id = $post->id;
+                $before_info = $post;
+                $before_time = $before_info->timestamp;
+                
+                $db_post_obj = extract_text_from_post($post);
+                $tags = $post->tags;
+                
+                if($post_id_last_attempted == null) {
+                    $post_id_last_attempted = $post_id;
+                    $post_last_attempted_info = $post;
+                }
+                try {
+                    $response_post_num++;
+                    $stmt_update_blogstat_count->exec([
+                        "most_recent_post_id" => $most_recent_post_id,
+                        "post_id_last_attempted" => $post_id, 
+                        "indexed_count" => $db_blog_info->indexed_post_count,
+                        "serverside_posts_reported" => $server_blog_info->total_posts,
+                        "is_indexing" => 'TRUE', 
+                        "success" => 'FALSE', 
+                        "blog_uuid" => $blog_uuid]);
+                    $db->beginTransaction();
+                    // Insert post into posts table
+                    $tag_rawtext = implode('\n#', $tags);
+                    if(strlen($tag_rawtext) > 0) $tag_rawtext = "#$tag_rawtext";
+                    $tag_tstext = implode('\n', $tags);
+
+                    foreach ($db_post_obj->images as &$img) {
+                        $image = (object)$img;
+                        $alt_text = $image->alt_text ?? null;
+                        $caption = $image->caption ?? null;
+                        $will_insert = ["img_url" => $image->url, "caption"=> $caption,  "alt_text" => $alt_text];
+                        $image_id = $stmt_insert_image->exec($will_insert)->fetchColumn();
+                        $img["db_id"] = $image_id;
                     }
-                    continue;
+                
+                    list($transformed, $for_db) = transformNPF($post, $db_post_obj->images);
+
+                    $stmt_insert_post->exec(
+                        ["post_id" =>$post->id, 
+                        "post_url" => $post->post_url,
+                        "slug" => $post->slug,
+                        "blog_uuid"=>$blog_uuid, 
+                        "post_date"=>$post->timestamp,
+                        "blocks" => json_encode($transformed),
+                        "self_text" => $for_db->self, 
+                        "trail_text" => $for_db->trail,
+                        "image_text" => $for_db->images,
+                        "has_text" => $DENUM[$db_post_obj->has_text],
+                        "has_link" => $DENUM[$db_post_obj->has_link],
+                        "has_chat" => $DENUM[$db_post_obj->has_chat],
+                        "has_ask" => $DENUM[$db_post_obj->has_ask],
+                        "has_images" => $DENUM[$db_post_obj->has_images],
+                        "has_video" => $DENUM[$db_post_obj->has_video],
+                        "has_audio" => $DENUM[$db_post_obj->has_audio],
+                        "raw_tags" => $tag_rawtext, 
+                        "vec_tags" => $tag_tstext]);
+
+                    foreach ($db_post_obj->images as &$img) {
+                        $stmt_insert_posts_images->exec([$post->id, $img["db_id"]]);
+                    }
+
+                    $__arc_stat = serialize($archiving_status);
+                    // Insert tags into tags table and create relations in posts_tags table
+                    foreach ($tags as $tag) {
+                        if(check_delete($tag, $archiving_status->indexed_this_time, $blog_uuid, $db)) {
+                            $archiving_status->disk_used = $disk_use;
+                            $archiving_status->content = "Deleting blog by request of post <a href='$post->post_url'>$post->id</a>, please wait...";
+                            queueEventToAll($searches_array, "FINISHEDINDEXING!", $archiving_status);                  
+                            delete_blog($tag, $archiving_status->indexed_this_time, $blog_uuid, $db);
+                            $archiving_status->content = "Blog deleted. Goodbye.";
+                            $archiving_status->deleted = true;                       
+                            queueEventToAll($searches_array, "FINISHEDINDEXING!", $archiving_status);
+                            $resolve_queries->execute(["blog_uuid" => $blog_uuid]);
+                            $abandonLease->execute(["leader_uuid" => $archiver_uuid]);
+                            $db->commit();
+                            exit;
+                        }
+                        $tagid = $stmt_insert_tag->exec(["tag_text" => $tag])->fetchColumn();
+                        $stmt_insert_posts_tags->exec([$blog_uuid, $post->id, $tagid]);
+                        $arc_stat = unserialize($__arc_stat);
+                        $arc_stat->newTag = (object)[]; 
+                        $arc_stat->newTag->tag_id = $tagid;
+                        $arc_stat->newTag->tagtext = $tag;
+                        $arc_stat->newTag->user_usecount = 1;
+                        $arc_stat->disk_used = $disk_use;
+                        queueEventToAll($searches_array, "INDEXEDTAG!", $arc_stat);
+                    }
+                    
+                    $db_blog_info->indexed_post_count += 1;
+                    $stmt_update_blog->exec([
+                        "most_recent_post_id" => $most_recent_post_id, 
+                        "post_id_successfully_indexed" => $post_id, //sets both post_id_last_attempted and post_id_last_indexed
+                        "indexed_count" => $db_blog_info->indexed_post_count,
+                        "serverside_posts_reported" => $server_blog_info->total_posts,
+                        "is_indexing" => 'TRUE', 
+                        "success" => 'FALSE', 
+                        "blog_uuid" => $blog_uuid]);
+                    $db->commit();
+                    $post_id_last_indexed = $post_id_last_attempted;
+                    $post_last_indexed_info = $post_last_attempted_info;
+                    $archiving_status->indexed_post_count = $db_blog_info->indexed_post_count;
+                    $archiving_status->indexed_this_time += 1;
+
+                    $post_searches_results = execAllSearches($db, $searches_array, "p.post_id = :post_id", ["post_id" => $post->id]);
+                    $listener_result_map = [];
+
+                    $archiving_status->disk_used = $disk_use;
+                    $__arc_stat = serialize($archiving_status);
+                    $arc_stat = unserialize($__arc_stat);
+                    foreach($post_searches_results as $post_result_cont) {
+                        $post_result = $post_result_cont->results;
+                        if($post_result != false) {
+                            $post_result->tags = json_decode($post_result->tags);
+                            $arc_stat->as_search_result = [$post_result];
+                        }
+                        queueEvent("INDEXEDPOST!$post_result_cont->search_id", $arc_stat);
+                    }
+                    
+                    fireEventQueue();
+                } catch (Exception $e) {
+                    $db->rollBack(); 
+                    if($e->getCode() == "23505") { //post has already been indexed
+                        $jump_triggered = true;  
+                        //to avoid binary search if possible, let's just hope the problem magically fixes itself by the time we finish this batch
+                        if($response_post_num > 51) {
+                            $response_post_num = 0;
+                            break 2;
+                        } 
+                        continue;
+                    } 
+                    throw $e;  
                 }
-                throw $e;  
             }
-            $stmt_update_blog->execute([
-                "runstart_post_id" => $run_start_post_id, 
-                "post_id" => $post_id_last_attempted, 
-                "indexed_count" => $db_blog_info->indexed_post_count,
-                "serverside_posts_reported" => $server_blog_info->total_posts,
-                "is_indexing" => 'TRUE', 
-                "success" => 'TRUE', 
-                "blog_uuid" => $blog_uuid]);
-            $post_id_last_indexed = $post_id_last_attempted;
-            $archiving_status["indexed_post_count"] = $db_blog_info->indexed_post_count;
-            $archiving_status["indexed_this_time"] += 1;
-
-
-
-            $post_searches_results = execAllSearches($db, $searches_array, "p.post_id = :post_id", ["post_id" => $post->id]);
-            $listener_result_map = [];
-
-            foreach($post_searches_results as $post_result_cont) {
-                $post_result = $post_result_cont->results;
-                $arc_stat = (object)$archiving_status;
-                if($post_result != false) {
-                    $post_result->tags = json_decode($post_result->tags);
-                    $arc_stat->as_search_result = [$post_result];
-                    $arc_stat->disk_used = $disk_use;
-                }
-                queueEvent("INDEXEDPOST!$post_result_cont->search_id", $arc_stat);
-            }
+        } while (!empty($server_blog_info->posts));
+        
+        if(empty($gap_queue)) {       
+            $binary_threshold = max($server_blog_info->total_posts * 0.99, max($server_blog_info->total_posts-100, $server_blog_info->total_posts*0.99));
+            if($db_blog_info->indexed_post_count < $binary_threshold) {
+                $delta = -($db_blog_info->indexed_post_count - $server_blog_info->total_posts);
+                $arc_stat = unserialize(serialize($archiving_status));
+                $arc_stat->notice = "$delta sneaky posts failed to index. Attempting to find...";
+                sendEventToAll($searches_array, "NOTICE!", $arc_stat);
+                //we appear to be missing some posts. See if we can find them.                
+                //Siikr uses binary search! It is not very effective...
+                //Let's manually count the indexed posts like savages.
+                $actual_count = $db->prepare("SELECT COUNT(*) from posts WHERE blog_uuid = ?")->exec([$db_blog_info->blog_uuid])->fetchColumn();
+                //regardless of whether it solves the problem let's update the value in the blogstats column since we bothered.
+                $db->prepare("UPDATE blogstats SET indexed_post_count = ? WHERE blog_uuid = ?")->exec([$actual_count, $db_blog_info->blog_uuid]);
             
-            fireEventQueue();
+                if($db_blog_info->$indexed_post_count < $binary_threshold) {
+                    //Siikr uses binary search!
+                    if(!amLeader($db, $blog_uuid, $archiver_uuid)) {
+                        $resolve_queries->execute(["blog_uuid" => $blog_uuid]);
+                        $abandonLease->execute(["leader_uuid" => $archiver_uuid]);
+                        exit;
+                    } 
+                    $establishLease->exec([$blog_uuid, $archiver_uuid]);
+                    $binary_result = binarySearchMissing($db, $db_blog_info);
+                    $establishLease->exec([$blog_uuid, $archiver_uuid]);
+                    if($binary_result != null) { 
+                        //It's very effective!
+                        array_push($gap_queue, $binary_result);
+                        $response_post_num = 0;
+                        $arc_stat->notice = "Found some sneaky posts!";
+                        $arc_stat->resolved = true; 
+                        sendEventToAll($searches_array, "NOTICE!", $arc_stat);
+                    } else {
+                        //It's not very effective...
+                        $arc_stat->error = "Could not find sneaky posts...this is usually due to interactions with deactivated blogs.";
+                        $arc_stat->notice = $arc_stat->error;
+                        $arc_stat->resolved = false;
+                        $success_status = 'FALSE';
+                        sendEventToAll($searches_array, "ERROR!", $arc_stat);
+                    }
+                }
+            }
+            $success_status = 'TRUE'; 
         }
-    } while (!empty($server_blog_info->posts));
+        $loop_count++;
+    } while (
+        $loop_count <= $max_loop_count && !empty($gap_queue)
+    );
 
     // Update blogstats table
     //$stmt = $db->prepare("INSERT INTO blogstats (blog_uuid, most_recent_post_id, time_last_indexed, total_posts) VALUES (?, ?, NOW(), ?) ON CONFLICT (blog_uuid) DO UPDATE SET most_recent_post_id = EXCLUDED.most_recent_post_id, last_indexed = EXCLUDED.last_indexed, total_posts = EXCLUDED.total_posts");
     //$stmt->execute([$blog_uuid, $before_id, $server_blog_info->total_posts]);
-    $db->prepare("UPDATE blogstats SET success = TRUE, is_indexing = FALSE WHERE blog_uuid = ?")->execute([$blog_uuid]);
-    $archiving_status['content'] = "All done! ".$archiving_status["indexed_post_count"]." posts found, and ".$archiving_status['indexed_this_time']." new posts indexed!";
-    foreach($searches_array as $search_inst) {
-        sendEvent("FINISHEDINDEXING!$search_inst->search_id", (object)$archiving_status); #notify the client
-    }
+    $set_blog_success_status->exec([$success_status, $blog_uuid]);
+    $archiving_status->content= "All done! ".$archiving_status->indexed_post_count." posts archived, and ".$archiving_status->indexed_this_time." new posts indexed! (Try hitting the refresh button if you think I missed one of your results)";
+    $archiving_status->disk_used= $disk_use;
+    sendEventToAll($searches_array, "FINISHEDINDEXING!", (object)$archiving_status); #notify the client
+    
 
-} catch (PDOException $e) {
+} catch (Exception $e) {
     $error_string = "Error: " . $e->getMessage();
-    $archiving_status["error"] = $error_string;
-    $db->prepare("UPDATE blogstats SET success = FALSE, is_indexing = FALSE WHERE blog_uuid = ?")->execute([$blog_uuid]);
-    foreach($searches_array as $search_inst) {
-        sendEvent("ERROR!$search_inst->search_id", (object)$archiving_status);
-        sendEvent("ERROR!$search_inst->search_id", (object)$archiving_status);
-    }
+    $archiving_status->error = $error_string;
+    $archiving_status->notice = "A critical error occurred while indexing your blog. Posts may be missing.";
+    $set_blog_success_status->exec(['FALSE', $blog_uuid]);
+    sendEventToAll($searches_array, "ERROR!", (object)$archiving_status);
+    sendEventToAll($searches_array, "ERROR!", (object)$archiving_status);
+    $resolve_queries->execute(["blog_uuid" => $blog_uuid]);
     $abandonLease->execute(["leader_uuid" => $archiver_uuid]);
     die($error_string . "\n");
 }
+//$db->prepare("ANALYZE")->execute([]);
 $resolve_queries->execute(["blog_uuid" => $blog_uuid]);
 $abandonLease->execute(["leader_uuid" => $archiver_uuid]);
 
-/*returns an array containing 2 elements, first is raw text content ignoring anything that might be an image caption
-second is image captions and their alt_text*/
-function extractTextAndImageAltFromHTML($html) {
-    $dom = new DOMDocument();
-    @$dom->loadHTML($html); 
 
-    $xpath = new DOMXPath($dom);
-    $imgNodes = $xpath->query('//img');
-
-    // Extract alt text from each <img> node
-    $altTexts = [];
-    foreach ($imgNodes as $imgNode) {
-        if ($imgNode->hasAttribute('alt')) {
-            $altTexts[] = $imgNode->getAttribute('alt');
-        }
-        $imgNode->parentNode->removeChild($imgNode);
+function sendEventToAll($searches_array, $event_str, $message) {
+    foreach($searches_array as $search_inst) {
+        queueEvent($event_str.$search_inst->search_id, $message);
     }
-
-    return [$dom->textContent, implode(' ', $altTexts)];
+    fireEventQueue();
 }
 
-#If you're going through hell, keep going.
+function queueEventToAll($searches_array, $event_str, $message) {
+    foreach($searches_array as $search_inst) {
+        queueEvent($event_str.$search_inst->search_id, $message);
+    }
+}
+
+//If you're going through hell, keep going.
 function transformNPF($post, $db_images) {
     $compact = new stdClass();
     $db_content = new stdClass();
@@ -406,7 +481,8 @@ function transformNPF($post, $db_images) {
 }
 
 function collapseDBContent($db_content) {
-    $result = (object)["self" => "", "trail" => "", "images" => ""];
+    $result = (object)["self" => "", "trail" => "", "images" => "", "blogs_involved" => ""];
+    $blogs_involved = []; //extracts out blog names on a best effort basis so as to store them in their own dedicated columns 
     foreach($db_content->self->blocks as $block) {
         toCollapsed($block, $result->self, $result->images);
     }
@@ -426,7 +502,7 @@ function toCollapsed($db_block, &$into, &$images) {
         $images .= $db_block["val"];
 }
 
-#oh god. oh god. oh god.
+//oh god. oh god. oh god.
 function transformItem($post, $db_images) {
     global $blog_uuid;
     $subtype_map = [
@@ -457,6 +533,9 @@ function transformItem($post, $db_images) {
                 $item->c = $block->text;
                 if (isset($block->subtype)) {
                     $item->s = $subtype_map[$block->subtype];
+                }
+                if (isset($block->formatting)) {
+                    //augment_text($item->c);
                 }
                 break;
             case 'image':
@@ -506,48 +585,56 @@ function transformItem($post, $db_images) {
         $db_content->blocks = array_merge($db_content->blocks, get_db_type_for_block($block));
     }
     $respost->layout = $post->layout;
-    //applyLayout($post->layout, $respost, $typeCount);
 
     return [$respost, $db_content];
 }
 
-function applyLayout($layout, &$post, &$typeCount) {
-    $keyed_ltypes = [];
-    
-    foreach ($layout as $layoutItem) {
-        $typenum = $typeCount[$layoutItem->type] ??  -1;
-        $typeCount[$layoutItem->type] = $typenum;
-        applyBlocksLayout($layoutItem, $post, $keyed_ltypes, $typeCount);
-    }
-    $post->content = array_filter($post->content, function($value) {
-        return $value !== null;
-    });
-    foreach($keyed_ltypes as $k => $v) {
-        foreach($v as $i) {
-            $post->content[$i]->ltypes[] = $k;
-        }
-    }
-    asMerged($post->content, $keyed_ltypes["ask"]);
+/**
+ * updates the text contents of &$block in place to replace all detected username mentions with an xmltag representation
+ * of the username. This will atempt find usernames in the old style where people would copy and paste cnote text,
+ * as well as the new style where mentions are directly formatted via mentions this is so that the mention can 
+ */
+function augment_text(&$block) {
+
+
 }
 
-function applyBlocksLayout($layoutItem, &$post, &$keyed_ltypes, &$typeCount, $iltype=null) {
-    if($layoutItem->display) {
-        $iltype = $layoutItem->type;
-        foreach($layoutItem->display as $rows) {
-            applyBlocksLayout($rows, $post, $keyed_ltypes, $typeCount, $iltype);
-        }
-    } else {
-        $ltype = $iltype ?? $layoutItem->type;
-        $typeCount[$ltype] = $typeCount[$ltype]+1;
-        $typenum = $typeCount[$ltype];
-        foreach($layoutItem->blocks as $block_index) {
-            $keyed_ltypes["$ltype-$typenum"][] = $block_index;
-            if($ltype == "ask") {
-                $post->content[$layoutItem->blocks[$block_index]]->by = $layout->attribution->blog->name ?? "anonymous";
-            }
+/**
+ * looks at the formatting entry of any text if it exists, then splits the textblock into
+ * an array of seperate strings, such that the 0-inddexed odd numbered elements contain text sequences corresponding to a user mention, and the even ones contain text
+ * not corresponding to a user mention. An emty string is inserted at the beginning or end of the sequence to ensure this rule holds in the event that the first or last segment corresponds to a user mention
+ * 
+ * @param npfBlock should be a raw tumblr npfblock of type text with a formatting entry.
+*/
+function extractMentionSubtext($npfBlock) {
+    $result_array = [];
+    $mentionedUsers = [];
+    $text = $input['text'];
+    
+    // Iterate over the formatting to find mentions and replace them with whitespace
+    foreach ($input['formatting'] as $format) {
+        if ($format['type'] === 'mention') {
+            $username = $format['blog']['name'];
+            $mentionedUsers[] = $username;
+
+            $start = $format['start'];
+            $end = $format['end'];
+            if($start == 0) $resultArray[] = '';
+            if($end == strlen($input->text))
+
+            // Replace the mentioned username with whitespace
+            $length = $end - $start;
+            $whitespace = str_repeat(' ', $length);
+            $text = substr_replace($text, $whitespace, $start, $length);
         }
     }
+
+    return [
+        'mentionedUsers' => $mentionedUsers,
+        'processedText' => $text
+    ];
 }
+
 
 /**merges the text content of blocks of the given indices into the text content of a single block. */
 function asMerged(&$blocks, $indices_arr = null) {

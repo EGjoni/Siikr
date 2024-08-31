@@ -1,9 +1,10 @@
 <?php
 
 require_once '../internal/globals.php';
+require_once '../internal/disks.php';
 $userInfo = posix_getpwuid(posix_geteuid());
 $db = new PDO("pgsql:dbname=$db_name", $userInfo["name"], null);
-$basePath = "/mnt/volume_sfo3_01/archived/";
+$outpath = "/var/www/archived";
 
 function prompt($message) {
     echo $message;
@@ -30,13 +31,17 @@ function createFifo($fifoPath) {
 }
 
 function exportData($blogInfo) {
-    global $basePath, $db_name, $db_user;
+    global $outpath, $db_name;
+
+    // Assuming $db_name is defined in 'globals.php' and accessible here
+    $username = 'eron'; // Your PostgreSQL username
+    $password = ''; // PostgreSQL password, if required
 
     $post_columns = [
-        "post_id", "blog_uuid", "tag_text", "post_date", "post_url",
-        "archived_date", "reblog_key", "slug", "has_text", "has_ask",
+        "post_id", "blog_uuid", "tag_text", "post_date",
+        "archived_date", "reblog_key", "has_text", "has_ask",
         "has_link", "has_images", "has_video", "has_audio", "has_chat",
-        "blocks", "html"
+        "blocksb", "html"
     ];
 
     $images_columns = ['image_id', 'img_url'];
@@ -50,27 +55,31 @@ function exportData($blogInfo) {
         "images" => "SELECT DISTINCT i.".implode(', i.',$images_columns).", CAST(EXTRACT(EPOCH FROM i.date_encountered) AS INT) as millis_timestamp FROM images i JOIN images_posts ip ON i.image_id = ip.image_id JOIN posts p ON ip.post_id = p.post_id WHERE p.blog_uuid = '$blogUuid'"
     ];
 
-    $tempArchivePath = "$basePath/temp/{$blogName}__{$blogUuid}.tar";
-    $compressedArchivePath = "$basePath/zippes/{$blogName}__{$blogUuid}.tar.gz";
+    $tempArchivePath = "$outpath/temp/{$blogName}__{$blogUuid}.tar";
+    $compressedArchivePath = "$outpath/temp/{$blogName}__{$blogUuid}.tar.gz";
 
     // Prepare and execute psql command, and compress each query result into a single .tar.gz
     foreach ($exportQueries as $tableName => $query) {
-        $fullCommand = "psql -d '$db_name' -U '$db_user' -c " . escapeshellarg($query) . " | gzip > '{$basePath}/temp/{$tableName}'";
+        echo "Selecting $tableName...\n";
+        $fullCommand = "psql -d '$db_name' -U '$username' -c " . escapeshellarg($query) . " | gzip > '{$outpath}/temp/{$tableName}.gz'";
         system($fullCommand);
     }
 
     // Create a tar archive from the gzipped files
-    $tarCommand = "tar -cf $tempArchivePath -C '{$basePath}/temp/' " . implode(' ', array_map(function ($tableName) { return "{$tableName}.gz"; }, array_keys($exportQueries)));
+    echo "Compressing $tempArchivePath\n";
+    $tarCommand = "tar -cf $tempArchivePath -C '{$outpath}/temp/' " . implode(' ', array_map(function ($tableName) { return "{$tableName}.gz"; }, array_keys($exportQueries)));
     system($tarCommand);
 
     // Compress the tar archive
+
     $gzipCommand = "gzip $tempArchivePath";
     system($gzipCommand);
 
+    // Return the path of the compressed archive
     return $compressedArchivePath;
 }
 
-
+// Main
 $identifiers = $argc > 1 ? array_slice($argv, 1) : [];
 if (empty($identifiers)) {
     $blogName = prompt("Enter the blog name: ");

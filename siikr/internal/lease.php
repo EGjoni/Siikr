@@ -1,9 +1,14 @@
 <?php
 $stmtGetCurrentLeader = $db->prepare("SELECT leader_uuid FROM archiver_leases WHERE blog_uuid = :blog_uuid");
-$stmtCreateLease = $db->prepare("INSERT INTO archiver_leases (blog_uuid, leader_uuid) VALUES (:blog_uuid, :archiver_uuid)");
-$stmtRenewLease = $db->prepare("UPDATE archiver_leases SET lease_expires_on = now() + interval '5 seconds' WHERE blog_uuid = :blog_uuid AND leader_uuid = :archiver_uuid");
-$stmtStealLease = $db->prepare("UPDATE archiver_leases SET leader_uuid = :archiver_uuid, lease_expires_on = now() + interval '5 seconds' WHERE blog_uuid = :blog_uuid AND lease_expires_on < now()");
 $abandonLease = $db->prepare("DELETE FROM archiver_leases WHERE leader_uuid = :leader_uuid");
+$establishLease = $db->prepare("INSERT INTO archiver_leases (blog_uuid, leader_uuid) VALUES (?, ?) ON CONFLICT (blog_uuid) DO UPDATE SET leader_uuid = EXCLUDED.leader_uuid");
+
+/**returns true if the provided archiver_uuid is allowed to persist, false if it should terminate*/
+function amLeader($db, $blog_uuid, $archiver_uuid) {
+    global $stmtGetCurrentLeader;
+    $currentLeader = $stmtGetCurrentLeader->exec(['blog_uuid' => $blog_uuid])->fetchColumn();
+    return $currentLeader == $archiver_uuid;
+}
 
 function renewOrStealLease($db, $blog_uuid, $archiver_uuid) {
     global $stmtGetCurrentLeader, $stmtCreateLease, $stmtRenewLease, $stmtStealLease;

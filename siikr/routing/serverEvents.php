@@ -13,6 +13,7 @@ ini_set('log_errors', 0);
 ini_set('max_execution_time', 60*60*7.5); //7.5 hours. Just shy of mysql's default wait_timeout. 
 
 header("Cache-Control: no-cache");
+header('Access-Control-Allow-Origin: https://tumblr.com');
 header("Content-Type: text/event-stream");
 header('X-Accel-Buffering: no');
 

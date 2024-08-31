@@ -86,7 +86,7 @@ function fireEventQueue()
  */
 function hasFired($eventPattern, $message) {
     global $zmq_dedup_fired;
-    $pattArr = $zmq_dedup_fired[$eventPattern];
+    $pattArr = @$zmq_dedup_fired[$eventPattern];
     if ($pattArr != null) {
         if(in_array($message,$pattArr)) {
             return true;

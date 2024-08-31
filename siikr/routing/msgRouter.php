@@ -49,7 +49,7 @@ while(true) {
             $nowhere->send($message);
         //}       
     } else if(strlen($message) > 0) {
-        echo "broadcasting: $message \n";
+        //echo "broadcasting: $message \n";
         //error_log("broadcasting: $message \n");  
         $client_outputs->send($message);
     }    

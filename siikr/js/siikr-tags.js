@@ -131,17 +131,20 @@ function updateConstraints(resElm, selectedTags = null) {
 	var currentlySelectedTags = selectedTags;
 	if(selectedTags == null) 
 		currentlySelectedTags = getCurrentlySelectedTags();
-
-	resElm.discludedBy = {};
-	resElm.classList.remove("discluded");
+	
 	for(var k of Object.keys(currentlySelectedTags)) {
 		var tag = currentlySelectedTags[k];
-		if(tag.tagtype == "disclude") {
-			if(res.tags[tagElem.tagObj.tag_id] == null){
-				resElm.discludedBy[tag_id] = tag;
-				resElm.classList.add("discluded");
+		//for(var i=0; i<currentResults.length; i++) { 
+			var res = resElm.result;
+			if(tag.tagtype == "disclude") {
+				if(resElm.disculdedBy == null) 
+						resElm.discludedBy = {}; 
+				if(res.tags[tag.tag_id] == null) {
+					resElm.discludedBy[tag.tag_id] = tag;
+					resElm.classList.add("discluded");
+				}
 			}
-		}
+		//}
 	}
 }
 
@@ -184,7 +187,9 @@ function removeSelectedTag(button) {
         for(var i=0; i<currentResults.length; i++) { 
             var res = currentResults[i];
             var resElm = res.element;
+	    if(resElm.discludedBy == null) resElm.discludedBy = {};
             delete resElm.discludedBy[tagElem.tagObj.tag_id];
+	    if(Object.keys(resElm.discludedBy).length == 0) resElm.classList.remove("discluded");
         }
         reSort(sortBy, true, false);
     } else {
