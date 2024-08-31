@@ -1256,21 +1256,6 @@ GRANT ALL ON TABLE public.tags TO siikrweb;
 
 GRANT ALL ON SEQUENCE public.tags_tag_id_seq TO siikrweb;
 
-
---
--- Name: DEFAULT PRIVILEGES FOR SEQUENCES; Type: DEFAULT ACL; Schema: public; Owner: -
---
-
-ALTER DEFAULT PRIVILEGES FOR ROLE eron IN SCHEMA public GRANT ALL ON SEQUENCES  TO siikrweb;
-
-
---
--- Name: DEFAULT PRIVILEGES FOR TABLES; Type: DEFAULT ACL; Schema: public; Owner: -
---
-
-ALTER DEFAULT PRIVILEGES FOR ROLE eron IN SCHEMA public GRANT ALL ON TABLES  TO siikrweb;
-
-
 --
 -- PostgreSQL database dump complete
 --
