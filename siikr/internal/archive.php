@@ -3,7 +3,7 @@ require_once 'globals.php';
 require_once 'disk_stats.php';
 require_once 'post_processor.php';
 //echo phpversion();
-$archiver_uuid = uuid_create(UUID_TYPE_RANDOM);
+$archiver_uuid = uuid_create_v4();
 $archiver_version = '3';
 $userInfo = posix_getpwuid(posix_geteuid());
 $db = new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
