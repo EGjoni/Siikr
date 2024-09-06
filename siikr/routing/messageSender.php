@@ -19,7 +19,8 @@ $evtCount = sizeof($evtPatts);
 if($evtCount > 0) {
     $messageSenderContext = new ZMQContext(1, true);
     $sessID = $_COOKIE['PHPSESSID'];
-    $messageSenderSocket= new ZMQSocket($messageSenderContext, ZMQ::SOCKET_PUSH, 'mss'.$sessID, 'initializeMessageSenderSockets');
+    $messageSenderSocket= new ZMQSocket($messageSenderContext, 
+    ZMQ::SOCKET_PUSH, 'mss'.$sessID, 'initializeMessageSenderSockets');
 
     $msgs = $_REQUEST["m"];    
     for($i=0; $i<$evtCount; $i++) {

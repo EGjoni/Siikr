@@ -47,12 +47,15 @@ while(true) {
         } else {*/
             //echo "suppressed beacon due to insufficient delta: $delta";
             $nowhere->send($message);
+            //error_log("msgrouter: hb---\n");
         //}       
     } else if(strlen($message) > 0) {
         //echo "broadcasting: $message \n";
         //error_log("broadcasting: $message \n");  
         $client_outputs->send($message);
-    }    
+    } else {
+        //error_log("hb???\n"); 
+    }
     
     /*if($delta > 5) {
         //echo "brodcasting: ???beacon???  boot loiterers\n";

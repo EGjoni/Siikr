@@ -1,5 +1,5 @@
 <?php
-$scriptVer = 58;
+$scriptVer = 68;
 require_once 'internal/disks.php';
 try {
 
@@ -16,166 +16,11 @@ try {
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<title>Siikr - A tumblr search engine that really exists!</title>
-<link rel="stylesheet" type="text/css" href="css/sikr-css.css?<?php echo $scriptVer; ?>">
-<!--<style>
-        :root {
-            --rain-1: 5s;
-            --rain-2: 6s;
-            --rain-3: 7s;
-            --rain-4: 5.5s;
-            --rain-5: 6.5s;
-            --rain-6: 7.5s;
-            --rain-7: 5.8s;
-            --rain-8: 6.8s;
-            --rain-9: 7.8s;
-
-            --delay-1: 2s;
-            --delay-2: 3s;
-            --delay-3: 4s;
-            --delay-4: 5s;
-            --delay-5: 6s;
-            --delay-6: 2.5s;
-            --delay-7: 3.5s;
-            --delay-8: 6.5s;
-            --delay-9: 7s;
-
-            --rotation-1: -130deg;
-            --rotation-2: -145deg;
-            --rotation-3: -160deg;
-            --rotation-4: -175deg;
-            --rotation-5: 190deg;
-            --rotation-6: 105deg;
-            --rotation-7: 120deg;
-            --rotation-8: 135deg;
-            --rotation-9: 150deg;
-        }
-
-        @keyframes rain {
-            0% {
-                opacity: 0;
-                transform: translateY(-5%);
-            }
-
-            5% {
-                opacity: 1;
-            }
-
-            75% {
-                opacity: 1;
-            }
-
-            100% {
-                opacity: 0;
-                transform: translateY(100vh) rotate(var(--rotate));
-            }
-        }
-
-        .rain {
-            position: fixed;
-            display: block;
-            width: 100%;
-            height: 100%;
-            pointer-events: none;
-            overflow: hidden;
-            z-index: 5;
-        }
-
-        .rain span {
-            position: absolute;
-            font-size: 30px;
-            animation: rain linear infinite;
-            animation-fill-mode: forwards;
-            opacity: 0;
-        }
-
-        .rain span:nth-child(9n+1) {
-            left: calc(10% * 0);
-            animation-duration: var(--rain-1);
-            animation-delay: var(--delay-1);
-            --rotate: var(--rotation-1);
-        }
-
-        .rain span:nth-child(9n+2) {
-            left: calc(10% * 1);
-            animation-duration: var(--rain-2);
-            animation-delay: var(--delay-2);
-            --rotate: var(--rotation-2);
-        }
-
-        .rain span:nth-child(9n+3) {
-            left: calc(10% * 2);
-            animation-duration: var(--rain-3);
-            animation-delay: var(--delay-3);
-            --rotate: var(--rotation-3);
-        }
-
-        .rain span:nth-child(9n+4) {
-            left: calc(10% * 3);
-            animation-duration: var(--rain-4);
-            animation-delay: var(--delay-4);
-            --rotate: var(--rotation-4);
-        }
-
-        .rain span:nth-child(9n+5) {
-            left: calc(10% * 4);
-            animation-duration: var(--rain-5);
-            animation-delay: var(--delay-5);
-            --rotate: var(--rotation-5);
-        }
-
-        .rain span:nth-child(9n+6) {
-            left: calc(10% * 5);
-            animation-duration: var(--rain-6);
-            animation-delay: var(--delay-6);
-            --rotate: var(--rotation-6);
-        }
-
-        .rain span:nth-child(9n+7) {
-            left: calc(10% * 6);
-            animation-duration: var(--rain-7);
-            animation-delay: var(--delay-7);
-            --rotate: var(--rotation-7);
-        }
-
-        .rain span:nth-child(9n+8) {
-            left: calc(10% * 7);
-            animation-duration: var(--rain-8);
-            animation-delay: var(--delay-8);
-            --rotate: var(--rotation-8);
-        }
-
-        .rain span:nth-child(9n+9) {
-            left: calc(10% * 8);
-            animation-duration: var(--rain-9);
-            animation-delay: var(--delay-9);
-            --rotate: var(--rotation-9);
-        }
-        .rain span:nth-child(3n+1)::before {
-            content: "😢";
-        }
-
-        .rain span:nth-child(3n+2)::before {
-            content: "😭";
-        }
-
-        .rain span:nth-child(3n+3)::before {
-            content: "🥺";
-        }
-
-    </style>-->
-    </head>
+        <title>Siikr - A tumblr search engine that really exists!</title>
+    <link rel="stylesheet" type="text/css" href="css/sikr-css.css?<?php echo $scriptVer; ?>">
+</head>
 <body>
 <?php //if($squid_game == true) {require_once 'deletion_roulette.php';}?>
-    <!--<div class="rain">
-        <span></span>
-        <span></span>
-        <span></span>
-        <span></span>
-        <span></span>
-        <span></span>
-        <span></span>
-    </div>-->
 <div id="all-stuff">
     <?php require 'management/notice.php'?>
     <div id="support">
@@ -196,49 +41,8 @@ try {
                 </ul>
             </ul>
         </details>
-        <div id="outer-donation" style="display: none">
-            <details style="color: lightgray;padding-right: 10px;">
-                <summary style="
-                    background-color: 1c3144;
-                    width: 165px;
-                    margin-left: 9px;
-                    margin-top: 5px;
-                    "><div id="donate-title">Donate?</div><div id="sub-blurb" style="
-                    max-width: 200px;
-                ">Please help with server costs :3</div>
-                </summary>
-                <div id="donation-box">
-                    <div class="donation-tabs">
-                        <div class="tab">
-                            <input type="radio" id="bitcoin" name="tab-group-1" checked="">
-                            <label for="bitcoin" id="bitcoin-tab"></label>
-
-                            <div class="content">
-                                <a href="funding/siikr/btc-address.html"><img class="qr" src="funding/siikr/siikr-donations-btc.png"></a>
-                            </div>
-                        </div>
-                        <div class="tab">
-                            <input type="radio" id="ethereum" name="tab-group-1">
-                            <label for="ethereum" id="ethereum-tab"></label>
-                            <div class="content">
-                                <a href="funding/siikr/ethereum-address.html"><img class="qr" src="funding/siikr/siikr-donations-eth.png"></a>
-                            </div>
-                        </div>
-                        <div class="tab">
-                                <input type="radio" id="patreon" name="tab-group-1">
-                                <label for="patreon" id="patreon-tab"></label>
-
-                            <div class="content">
-                                <span><a href="https://www.patreon.com/Eron_G?ty=a" target="_blank">Click here to donate through Patreon!</a></span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </details>
-            <!--<a href="tumblr_auth/blog_control_panel.php" target="_blank"><button id="control-panel-button">Privacy Options</button></a>-->
-        </div>
     </div>
-    <?php require_once 'toys/wordcloud.php';?>
+    <?php require_once 'toys/wordcloud.php'?>
     <!--<div id="beta-notice" st>This version of siikr is <b>SUPER SAD</b>. Please be nice to it! <span style="font-size:0.8em"> Report any bugs to <a href="http://antinegationism.tumblr.com/ask" style="color: white">antinegationism.tumblr.com/ask</a></span></div>-->
 
     <div id="container">
@@ -251,7 +55,6 @@ try {
                 <button id="search" value="Seek" onclick="preSeek()">Seek</button>
             </div>
         </div>
-
         <div id="progress-container">
             <div id="status"><span id="status-text"></span></div>
             <div id="progress"><div id="progress-text"></div></div>
@@ -259,7 +62,7 @@ try {
         <details id="notice-container">
             <summary></summary>
             <div id="notice-log" onclick="collapseExpandableParent(this)"></div>
-        </details>
+        </details>      
 
         <div id="search-controls">
                 <div id="previews" style=""><input type="checkbox" id="preview-toggle" style="
@@ -276,7 +79,7 @@ try {
                     </div>
                 </div>
 
-                <select id="sort-by" onchange="reSort(this, true, false)">
+                <select id="sort-by" onchange="reSort(this.value, true, false)">
                     <option value="score">Relevance</option>
                     <option value="hits">Popularity</option>
                     <option value="new">Newest</option>
@@ -341,8 +144,11 @@ try {
         <div class="post-content"></div>
     </div>
     <div class="ask-box">
-        <a class="name-container"></a><img class="blog-icon" loading="lazy"/>
-        <div class="ask-content"></div>
+       <img class="blog-icon" loading="lazy"/>
+        <div class="ask-content">
+            <a class="name-container"></a>
+            <div class="ask-text-container"></div>
+        </div>
     </div>
     <div class="result textured-background">
     
@@ -475,8 +281,9 @@ try {
 
     }, 25);*/
     var scriptVersion = <?php echo $scriptVer; ?>;
-    var baseServerUrlString = 'https://siikr.giftedapprentice.com';
-    var pseudoSocket = new PseudoSocket();
+    <?php echo $injectable?>
+    var alwaysPrepend = "";
+    
 </script>
 <script src="js/wordcloud.js?v=<?php echo $scriptVer; ?> "></script>
 <script src="js/modified.js?v3"></script>

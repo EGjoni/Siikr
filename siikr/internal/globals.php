@@ -1,5 +1,10 @@
 <?php
-
+$possible_encodings =['UTF-8', 'ISO-8859-1', 'ASCII', 'JIS', 'EUC-JP', 'SJIS'];
+function ensure_valid_string($string) {
+    global $possible_encodings;
+    $detected_encoding = mb_detect_encoding($string, $possible_encodings, true);
+    return mb_convert_encoding($string, 'UTF-8', $detected_encoding);
+}
 /**Like PDOStatement but with an exec convenience function that returns the statement again for easy chaining with fetch calls
  * An error is thrown on failure instead of returning false
 */
@@ -14,9 +19,40 @@ class SPDOStatement extends PDOStatement {
         $qtime = null;
         if($deltas) $qtime = microtime(true);
         else $this->execution_time = null;
-        $result = $this->execute($params) ? $this : throw new PDOException("Execution failed"); 
+        try {
+            $result = $this->execute($params) ? $this : throw new PDOException("Execution failed");
+        } catch (PDOException $e) {
+            $dbg = $this->debug($params, true, true); 
+            //$e->bylines  = explode("\n", $dbg);
+            throw $e;
+        }
+        catch(PDOError $e){throw $e;}
+        
         if($deltas) $this->execution_time = microtime(true)- $qtime;
         return $result;
+    }
+
+
+    public function debug($params = null, $asStr=false, $paramSummary=false) {
+        $interpolatedQuery = $this->queryString;
+        if($params == null) echo $interpolatedQuery;
+        else {
+            if($paramSummary) {
+                foreach($params as $key => &$value) {
+                    if(is_string($value)) {
+                        $value = "...";
+                    }
+                }
+            }
+            foreach ($params as $key => $value) {                
+                $interpolatedQuery = str_replace(":$key", "'" . addslashes($value) . "'", $interpolatedQuery);
+            }
+            if($asStr) return $interpolatedQuery;
+            else echo $interpolatedQuery;
+        }
+    }
+    public function getBuilt($params = null) {
+        return $this->debug($params, true);
     }
 }
 
@@ -34,10 +70,11 @@ require_once 'disk_stats.php';
 
 
 $clean_sp = [
-    "sp_self_text", "sp_self_media", "sp_tag_text", "sp_trail_text", "sp_trail_media", "sp_trail_usernames", //v4
+    "sp_self_text", "sp_self_mentions", "sp_trail_text", "sp_trail_mentions", //v4 en_hun_simple
+    "sp_tag_text", "sp_self_media", "sp_trail_media", "sp_trail_usernames", //v4 ts_meta
     "sp_image_text"//v3
 ];
-$clean_fp= ["fp_images", "fp_video", "fp_audio", "fp_ask", "fp_chat", "fp_link"];
+$clean_fp= ["fp_include_reblogs", "fp_images", "fp_video", "fp_audio", "fp_ask", "fp_chat", "fp_link"];
 //TODO: The enum approach takes 16 bytes per row and is actually less flexible than using bytes. (whereby inequality operators can apply via index)
 //For 1600 blogs, this currently amounts to 800MB of space.
 //switching to bytes would bring it down to 200MB
@@ -59,20 +96,45 @@ function get_base_url($blog_name_or_uuid, $request_type) {
         return "https://api.tumblr.com/v2/blog/{$blog_name_or_uuid}.tumblr.com/$request_type?";
 }
 
-function call_tumblr($blog_name_or_uuid, $request_type, $params=[], $with_meta = false) {
-    global $api_key;
+
+function call_tumblr($blog_name_or_uuid, $request_type, $params=[], $with_meta = false, $asString = false) {
+    global $api_key; global $possible_encodings;
     $options = ['http' => ['ignore_errors' => true]];
     $params["api_key"] = $api_key;
     $encodedBlogName = urlencode($blog_name_or_uuid);
     $url = get_base_url($blog_name_or_uuid, $request_type).http_build_query($params);
     $context = stream_context_create($options);
-    $response = file_get_contents($url, false, $context);
-    $response = json_decode($response);
+    $response_s = file_get_contents($url, false, $context);
+    
+    $detected_encoding = mb_detect_encoding('UTF-8', $possible_encodings);
+    $response_j = mb_convert_encoding($response_s, 'UTF-8', $detected_encoding);
+    if($asString) 
+        return $response_j;
+    //$response = mb_convert_encoding($response, 'UTF-8', $possible_encodings);
+    $response = json_decode($response_j);
+    
+    //$cleanResponse = preg_replace('/[\x00-\x09\x0B\x0C\x0E-\x1F\x80-\xFF]/','', $response);
+   
     /*if($response->meta->status != 200) {
         throw new Error(implode(', ', get_object_vars($response->errors)));
-    }*/    
-    if($with_meta) 
+    }*/
+    if($with_meta) {
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            if(isset($http_response_header)) {
+                //sometimes tumblr responds with a proper json object, other times with a redirect, and there's no way of know when it will do which
+                foreach ($http_response_header as $header) {
+                    if (preg_match('/^HTTP\/\d+\.\d+ (\d+) /', $header, $matches)) {
+                        $status_code = (int)$matches[1];
+                        $fake_obj = (object)["meta"=> ["status" => $status_code],
+                                            "errors" => [(object)["title" => "Not Found"]]];
+                        return $fake_obj;
+                    }
+                }
+            }
+            throw new Error(json_last_error_msg());
+        }
         return $response;
+    }
     return $response->response;
 }
 
@@ -96,6 +158,7 @@ function execAllSearches($db, $search_array, $match_condition, $exec_params) {
 
 function execSearch($db, $search_query, $search_params, $match_condition, $exec_params) {
     $post_check_stmt = $db->prepare(getTextSearchString($search_query, $search_params, $match_condition));
+    //$post_check_stmt->debug($exec_params);
     $post_check_stmt->execute($exec_params);
     $result = $post_check_stmt->fetch(PDO::FETCH_OBJ);
     return $result;
@@ -114,15 +177,20 @@ function getTagInfoString() {
 }
 
 function getTextSearchString($query, $search_params, $match_condition="p.blog_uuid = :q_uuid ") {
-    $query_simple = $query; 
-    $query_english = str_replace("_tsquery('simple',", "_tsquery('en_us_hun_simple',", $query);
-    list($weight_string, $filter_string, $image_only) = parseParams($search_params);
+    
+    list($content_weight_string, $meta_weight_string, $stem_weight_string, $filter_string) = parseParams($search_params);
     //if(!$image_only)
-    return getPostSearchString($query_simple, $query_english, $match_condition, $weight_string, $filter_string);
+    return getPostSearchString($query, $match_condition, $content_weight_string, $meta_weight_string, $stem_weight_string, $filter_string);
     //else 
     //    return getImageSearchString($query, $match_condition);
 }
 
+function normalize(&$over_weight) {
+    $weightsum = 0.0;
+    foreach($over_weight as $k => $v) $weightsum += $v;
+    if($weightsum > 0)
+        foreach($over_weight as $k => &$v) $v = number_format($v/(float)$weightsum, 6, '.', '');
+} 
 
 function parseParams($paramstring) {
     global $clean_sp;
@@ -135,11 +203,18 @@ function parseParams($paramstring) {
         $kvexp = explode(":", $kv);
         $k = $kvexp[0]; 
         $v = $kvexp[1];
+        if($k=="fp_include_reblogs") {
+            $filter_assoc["include_reblogs"] = $v;
+            continue;
+        }
+        if($v == false || $v == "false") continue;
         if(in_array($k, $clean_sp))
             $over_assoc[substr($k, 3)] = $v; 
-        else if(in_array($k, $clean_fp))
+        else if(in_array($k, $clean_fp)) {
             $filter_assoc[ "has_".substr($k, 3)] = $v;
+        }
     }
+    
     //if(!$over_assoc["sp_self_text"] && !$over_assoc) 
     //$over_fields = [];
     if(isset($over_assoc['image_text'])) {//v3 -> v4
@@ -147,21 +222,49 @@ function parseParams($paramstring) {
         $over_assoc['trail_media'] = $over_assoc['image_text']; 
         $over_assoc['trail_usernames'] = $over_assoc['trail_text'];
     }
-    
-    $over_weight[] = $over_assoc["self_text"] ? 1.0 : 0.0; 
-    $over_weight[] = $over_assoc["self_media"] ? 1.0 : 0.0;
-    $over_weight[] = $over_assoc["tag_text"] ? 1.0 : 0.0;
 
-    $over_weight[] = $over_assoc["trail_text"] ? 1.0 : 0.0;
-    $over_weight[] = $over_assoc["trail_usernames"] ? 1.0 : 0.0;
-    $over_weight[] = $over_assoc["trail_media"] ? 1.0 : 0.0;
-    $weight_string = "{".implode(", ", $over_weight)."}";
-    $weightsum = 0.0;
-    foreach($over_weight as $k => $v) {
-        $weightsum += $v;
-    }
-    $media_only = $weightsum > 0 ? false : true;
-    $filter_string = "";
+    /**
+     * with two tsvector columns we can have 
+     * ts_content:
+     *  self_text = 'A'
+     *  self_text_mentions = 'B'
+     *  trail_text = 'C' 
+     *  trail_text_mentions = 'D' 
+     * 
+     * ts_meta: 
+     *  tag_text = 'A'
+     *  self_media = 'B'
+     *  trail_media = 'C'
+     *  trail_usernames = 'D'
+     * 
+     * english_stem_simple 
+     *  self_text = 'A'
+     *  self_media = 'B' 
+     *  self_media = 'C'
+     *  trail_media = 'D'
+     */
+    
+    $over_content[] = isset($over_assoc["self_text"]) ? 1.0 : 0.0;
+    $over_content[] = isset($over_assoc["self_mentions"]) ? 1.0 : 0.0;  
+    $over_content[] = isset($over_assoc["trail_text"]) ? 1.0 : 0.0;
+    $over_content[] = isset($over_assoc["trail_mentions"]) ? 1.0 : 0.0;
+    
+    $over_meta[] = isset($over_assoc["tag_text"]) ? 1.0 : 0.0;
+    $over_meta[] = isset($over_assoc["self_media"] )? 1.0 : 0.0;
+    $over_meta[] = isset($over_assoc["trail_media"]) ? 1.0 : 0.0;
+    $over_meta[] = isset($over_assoc["trail_usernames"]) ? 1.0 : 0.0;
+    
+    $over_stems[] = isset($over_assoc["self_text"]) ? 1.0 : 0.0;
+    $over_stems[] = isset($over_assoc["self_media"]) ? 1.0 : 0.0;
+    $over_stems[] = isset($over_assoc["trail_text"]) ? 1.0 : 0.0;
+    $over_stems[] = isset($over_assoc["trail_media"]) ? 1.0 : 0.0;
+    //$weight_string = "{".implode(", ", $over_weight)."}";
+    
+    
+    normalize($over_content);
+    normalize($over_meta);
+    $filter_string = isset($filter_assoc["include_reblogs"]) && $filter_assoc["include_reblogs"] == 0 ? "AND is_reblog = false " : "";
+    unset($filter_assoc["include_reblogs"]);
     foreach($filter_assoc as $k => $v) {
         if($v == 3) {
             $filter_string .= "AND ($k = '$DENUM[1]' OR $k = '$DENUM[2]' OR $k = 'BOTH')";
@@ -170,43 +273,48 @@ function parseParams($paramstring) {
             $filter_string .= "AND ($k = '$DENUM[$v]'$both_cond)";
         }
     }
-    return array($weight_string, $filter_string, $media_only);
+    $content_weight_string = "ARRAY[".implode(", ", $over_content)."]::float4[]";
+    $meta_weight_string = "ARRAY[".implode(", ", $over_meta)."]::float4[]";
+    $over_stems_string = "ARRAY[".implode(", ", $over_stems)."]::float4[]";
+    return array($content_weight_string, $meta_weight_string, $over_stems_string, $filter_string);
 }
 
 
-function getImageSearchString($query_simple, $query_english, $post_match_condition="p.blog_uuid = :q_uuid ") {
-    return 
-    "WITH filtered_ips AS (
-        SELECT ip.post_id, ip.image_id
-        FROM images_posts p
-        WHERE $post_match_condition
-    )
-    SELECT realposts.*, (ts_rank(i.caption_vec, $query_simple) + ts_rank(i.caption_vec, $query_english) + ts_rank(i.alt_text_vec, $query_simple) + ts_rank(i.alt_text_vec, $query_english)) as score
-    FROM posts realposts
-    JOIN filtered_ips fip ON realposts.post_id = fip.post_id
-    JOIN images i ON i.image_id = fip.image_id 
-    AND (i.caption_vec @@ $query_simple
-        OR
-         i.caption_vec @@ $query_english
-        OR 
-         i.alt_text_vec @@ $query_simple
-        OR
-         i.alt_text_vec @@ $query_english
-        )";
-}
 
-function getPostSearchString($query_simple, $query_english, $match_condition="p.blog_uuid = :q_uuid ", $weight_string, $filter_string) {
-    return "SELECT 
-                c.post_id::text, 
-                --c.post_url, 
-                c.post_date,
-                c.blocks,
-                c.tag_text, 
-                (ts_rank('$weight_string', c.en_hun_simple, $query_simple) + ts_rank('$weight_string', c.ts_meta, $query_english)) as score,
-                COALESCE(agg.tags, array_to_json(ARRAY[]::integer[])) as tags,
-                COALESCE(mediaagg.media_info, '[]'::json) media
-            FROM 
-                (".getInnerSearchString($query_simple, $query_english, $match_condition, $filter_string).") as c 
+function getPostSearchString($query_text, $match_condition="p.blog_uuid = :q_uuid ", $content_weight_string, $meta_weight_string, $stem_weight_string, $filter_string) {
+    $query_text_hun = "websearch_to_tsquery('en_us_hun_simple', '$query_text')";
+    $query_text_meta = $query_text_hun;
+    $query_text_literal = "websearch_to_tsquery('simple', '$query_text')";
+    $query_text_stem = "websearch_to_tsquery('english_stem_simple', '$query_text')";
+    //--// + ts_rank_cd($stem_weight_string, base_results.stems_only) as score
+    return "WITH results AS
+                (SELECT * FROM 
+                    (SELECT 
+                        base_results.post_id as post_id_i, 
+                        --//c.post_url, 
+                        base_results.post_date,
+                        base_results.blocks,
+                        base_results.tag_text,
+                        base_results.is_reblog,
+                        base_results.hit_rate,
+                        base_results.ts_meta,
+                        base_results.en_hun_simple,
+                        (   ts_rank_cd($content_weight_string, base_results.en_hun_simple, $query_text_hun, 21)
+                         + ts_rank_cd($meta_weight_string, base_results.ts_meta, $query_text_meta, 21)
+                         ) as score
+                            --// fultext rank codes:
+                            --//  1 = divides by 1+logarithm of document length
+                            --//  4 = divides by distance between words (mean harmonic length, only compatible with coverage distance ranker ts_rank_cd)
+                            --//  16 = log of number of unique words in the document
+                        
+                         
+                    FROM 
+                        (".getInnerSearchString($query_text_hun, $query_text_meta, $query_text_stem, $query_text_literal, $match_condition, $filter_string).") as base_results
+                    ) as scored
+                )
+            SELECT r.post_id_i::TEXT as post_id, r.*, COALESCE(agg.tags, array_to_json(ARRAY[]::integer[])) as tags,
+                        COALESCE(mediaagg.media_info, '[]'::json) media 
+            FROM results as r
             LEFT JOIN LATERAL 
                 (
                     SELECT 
@@ -216,7 +324,7 @@ function getPostSearchString($query_simple, $query_english, $match_condition="p.
                     LEFT JOIN 
                         tags t ON pt.tag_id = t.tag_id
                     WHERE 
-                        pt.post_id = c.post_id
+                        pt.post_id = r.post_id_i
                     GROUP BY 
                         pt.post_id
                 ) as agg ON true
@@ -229,32 +337,49 @@ function getPostSearchString($query_simple, $query_english, $match_condition="p.
                     LEFT JOIN
                         media m ON mp.media_id = m.media_id
                     WHERE 
-                        mp.post_id = c.post_id
+                        mp.post_id = r.post_id_i
                     GROUP BY
                         mp.post_id
                 ) as mediaagg ON true
+            
         ";
 }
 
 /**query match for just posts. Useful if you want to posthoc and*/
-function getInnerSearchString($query_simple, $query_english, $match_condition="p.blog_uuid = :q_uuid ", $filter_string="") {
-    $result = "SELECT 
+function getInnerSearchString($tsquery_hun, $tsquery_meta, $tsquery_stem, $tsquery_literal, $match_condition="p.blog_uuid = :q_uuid ", $filter_string="") {
+    
+    $result = "WITH queries AS (
+            SELECT $tsquery_hun as en_hun_q, 
+            $tsquery_meta as meta_q, 
+            $tsquery_stem as stem_q,
+            $tsquery_literal as literal_q
+        )
+        SELECT 
             p.post_id, 
             --p.post_url,
             p.post_date, 
             p.blocksb as blocks,
             p.tag_text,
             p.ts_meta,
-            p.en_hun_simple
+            p.en_hun_simple,
+            p.is_reblog,
+            p.hit_rate
         FROM 
-            posts p
+            posts p, queries q
         WHERE 
             $match_condition
             AND
-            (p.ts_meta @@ $query_english
+            (
+            p.en_hun_simple @@ q.literal_q
+            OR 
+            p.ts_meta @@ q.literal_q
             OR
-            p.en_hun_simple @@ $query_english)
+            p.ts_meta @@ q.meta_q
+            OR
+            p.en_hun_simple @@ q.en_hun_q
+            )
             $filter_string";
+             //-- //OR p.stems_only @@ $query_text_stem
     return $result;
 }
 
@@ -264,7 +389,7 @@ class Parser {
     private $index;
     private $language;
 
-    public function __construct($language = 'simple') {
+    public function __construct($language = 'en_us_hun_simple') {
         $this->language = $language;
     }
 
@@ -480,10 +605,30 @@ function ensureSpace($db, $db_blogInfo, $server_blog_info) {
 	$current_wal = $db->prepare("SELECT wal_bytes FROM pg_stat_wal")->exec([])->fetchColumn();
 	$max_wal = sizeToBytes($db->prepare("SHOW max_wal_size")->exec([])->fetchColumn());
     
-	$required_wal_headroom = $max_wal - $current_wal;
+	$required_wal_headroom = $max_wal;// - $current_wal;
 	$free_space -= $required_wal_headroom + $db_min_disk_headroom;
 	$anticipated_free_space = $free_space - $anticipatedSpaceRequired;
 	return $anticipated_free_space >= 0;
+}
+
+/**returns an estimate of the number of posts we have room for */
+function estimatePostIngestLimit($db, $free_space = null) {
+    $averagePostSize = 3300;
+    if($free_space == null)
+        $free_space = capped_freespace($db);
+    return $free_space/$averagePostSize;
+}
+
+/**returns the number of megabytes of space siikr's db is still allowed to use */
+function capped_freespace($db) {
+    global $db_disk;
+	global $db_min_disk_headroom;
+    $free_space = disk_free_space($db_disk);
+    $current_wal = $db->prepare("SELECT wal_bytes FROM pg_stat_wal")->exec([])->fetchColumn();
+	$max_wal = sizeToBytes($db->prepare("SHOW max_wal_size")->exec([])->fetchColumn());
+	$required_wal_headroom = $max_wal;// - $current_wal;
+    $free_space -= $required_wal_headroom + $db_min_disk_headroom;
+    return $free_space;
 }
 
 
@@ -493,11 +638,13 @@ function sanitizeParams($paramArr) {
     $sanitary = [];
     
     foreach($paramArr as $k => $v) {
-        if(in_array($k, $clean_sp) && (bool)$v) {
-            $sanitary[$k] = $v;
+        if(in_array($k, $clean_sp) && filter_var($v, FILTER_VALIDATE_BOOLEAN)) {
+            $sanitary[$k] = filter_var($v, FILTER_VALIDATE_BOOLEAN) ? 1 : 0;
         }
         else if(in_array($k, $clean_fp) && (int)$v) {
             $sanitary[$k] = $v;
+        } else if(in_array($k, $clean_fp) && $k == "fp_include_reblogs") {
+            $sanitary[$k] = filter_var($v, FILTER_VALIDATE_BOOLEAN) ? 1 : 0;
         }
     }
     return $sanitary;
@@ -569,22 +716,22 @@ function binarySearchMissing($db, $blog_info) {
                         WHERE post_id = :post_id");
     $get_post_at_idx = $db->prepare(
                             "SELECT post_id as id, EXTRACT(epoch FROM post_date)::INT as timestamp FROM posts 
-                            WHERE blog_uuid = :blog_uuid ORDER BY post_date ASC LIMIT 1 OFFSET :offset");
+                            WHERE blog_uuid = :blog_uuid AND deleted = FALSE ORDER BY post_date ASC LIMIT 1 OFFSET :offset");
     $get_post_at_filt_offset = $db->prepare(
                             "SELECT post_id as id, EXTRACT(epoch FROM post_date)::INT as timestamp FROM posts 
-                            WHERE blog_uuid = :blog_uuid and post_date >= to_timestamp(:min_date) ORDER BY post_date ASC LIMIT 1 OFFSET :offset");
+                            WHERE blog_uuid = :blog_uuid AND deleted = FALSE  and post_date >= to_timestamp(:min_date) ORDER BY post_date ASC LIMIT 1 OFFSET :offset");
     $get_fake_post_offset = $db->prepare(
                             "SELECT COUNT(*) FROM posts 
-                            WHERE blog_uuid = :blog_uuid and post_date < to_timestamp(:max_date) and post_date >= to_timestamp(:min_date)");
+                            WHERE blog_uuid = :blog_uuid AND deleted = FALSE  and post_date < to_timestamp(:max_date) and post_date >= to_timestamp(:min_date)");
     $get_slow_post_offset = $db->prepare(
                             "SELECT COUNT(*) FROM posts 
-                            WHERE blog_uuid = :blog_uuid and post_date < to_timestamp(:max_date)");
+                            WHERE blog_uuid = :blog_uuid AND deleted = FALSE  and post_date < to_timestamp(:max_date)");
     $get_oldest_post_after = $db->prepare(
                             "SELECT post_id as id, EXTRACT(epoch FROM post_date)::INT as timestamp FROM posts 
-                             WHERE blog_uuid = :blog_uuid AND post_date > to_timestamp(:min_date) ORDER BY post_date ASC LIMIT 1");
+                             WHERE blog_uuid = :blog_uuid AND deleted = FALSE AND post_date > to_timestamp(:min_date) ORDER BY post_date ASC LIMIT 1");
     $verify_offset = $db->prepare(
                         "SELECT post_id as id, EXTRACT(epoch FROM post_date)::INT as timestamp FROM posts 
-                         WHERE blog_uuid = :blog_uuid ORDER BY post_date ASC LIMIT 1 OFFSET :offset");
+                         WHERE blog_uuid = :blog_uuid AND deleted = FALSE ORDER BY post_date ASC LIMIT 1 OFFSET :offset");
     $high_mark = null;
     $prev_low_mark = 0;
     $low_mark = 0;

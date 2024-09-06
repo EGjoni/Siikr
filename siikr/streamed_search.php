@@ -1,8 +1,9 @@
 <?php
-require_once 'internal/globals.php';
-$index_disabled = true;
-if(isset($_GET['override'])) $index_disabled = false;
- 
+require_once './internal/globals.php';
+$index_disabled = false;
+
+
+
 $offset = $_GET["offset"];
 $limit = $_GET["limit"];
 
@@ -10,7 +11,7 @@ $init_stride = 15;
 $MAX_LIMIT = 99999;
 $stride = 100;
 $blog_info = null;
-$username = $_GET["username"];
+$username = explode(".", $_GET["username"])[0];
 $raw_query = pg_escape_string($_GET["query"]."");
 $search_params_assoc = sanitizeParams($_GET);
 $sort_mode_arg = $_GET["sortMode"];
@@ -40,7 +41,7 @@ function beginSearch($db) {
     
     //$parsed = parseParams($search_params)
     $parser = new Parser('simple'); //fancy new abstract syntax tree parse
-    $query = "websearch_to_tsquery('simple', '$raw_query')";//$parser->parse($raw_query);
+    $query = "$raw_query";//$parser->parse($raw_query);
     $blog_info = (object)[];
     try {
         $response = call_tumblr($username, "info", [], true);
@@ -54,26 +55,34 @@ function beginSearch($db) {
             throw $e;
         } 
         $blog_info->valid = true;
-        augmentValid($db, $blog_info);        
+        augmentValid($db, $blog_info);
+        $search_query = getTextSearchString($query, $search_params)." $sort_mode";
+
+        
         if(!$is_insurance_check) {
             $activate_search = $db->prepare("INSERT INTO active_queries (query_text, query_params, blog_uuid) VALUES (:query_text, :query_params, :blog_uuid) ON CONFLICT (query_text, query_params, blog_uuid) DO UPDATE SET blog_uuid = EXCLUDED.blog_uuid returning search_id");
             $activate_search->execute(["query_text" => $query, "query_params"=>$search_params, "blog_uuid" => $blog_info->blog_uuid]);
             $blog_info->search_id = $activate_search->fetchColumn();
-            $search_id_info = (object)[]; 
-            $search_id_info->search_id = $blog_info->search_id;
-            $search_id_info->valid = true;
-            encodeAndFlush($search_id_info);
             if($is_insurance_check != true) {
                 /* clientside script checks for missed results on completion, 
                 but this makes me paranoid about infinite loops if I put the wrong FINISHEDINDEXING event, and anyway it's more efficient just to skip so...*/
-                if(!$index_disabled) exec("php internal/archive.php ". $blog_info->search_id."  > /dev/null &");
+                $predir = __DIR__;
+                $exec_string = "php ".__DIR__."/internal/archive.php ". $blog_info->search_id;
+                if(!$index_disabled) exec("$exec_string  > /dev/null &");
                 else if($blog_info->indexed_post_count == 0) {
                     throw new Exception("Sorry, indexing of new blogs is temporarily disabled for maintenance");
                 }
             }
+            $search_id_info = (object)[]; 
+            $search_id_info->search_id = $blog_info->search_id;
+            $search_id_info->valid = true;
+            $search_id_info->is_init = true;
+            $search_id_info->server = $_SERVER["HTTP_HOST"];
+            $search_id_info->blog_uuid = $blog_info->blog_uuid;
+            encodeAndFlush($search_id_info);
         }
         $blog_info->tag_list = [];
-        $search_query = getTextSearchString($query, $search_params)." $sort_mode";
+        
         sendByStreamedSet($db, $blog_info, $search_query);
         //getByOffset($db, $blog_info, $search_query);        
         /*$tags_stmt = $db->prepare(getTagInfoString());
@@ -95,12 +104,14 @@ function sendByStreamedSet($db, $blog_info, $search_query) {
     global $offset; 
     global $limit;
     $stmt = $db->prepare($search_query, array(\PDO::ATTR_CURSOR => \PDO::CURSOR_SCROLL));
+    //$blog_info->debug_query = $stmt->getBuilt(["q_uuid" => $blog_info->blog_uuid]);
     //$debugStat = explode(" FROM ", $stmt); 
     //foreach($debugStat as &$stat) $stat = "FROM $stat";
     $result = $stmt->exec(["q_uuid" => $blog_info->blog_uuid], true);
+
     $blog_info->results = [];
     if($r = $result->fetch(PDO::FETCH_OBJ)) $blog_info->results[] = $r; 
-    for($i = 0; $i<$init_stride; $i++) {
+    for($i = 0; $i<$init_stride-1; $i++) {
         if($r = $result->fetch(PDO::FETCH_OBJ)) $blog_info->results[] = $r;
         else break;
     }

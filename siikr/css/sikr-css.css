@@ -1440,6 +1440,7 @@ button#show-advanced {
   border-bottom: 0px;
   border-style: solid;
 }
+
 .blog-icon {
   display: inline-block;
   margin-top: 8px;
@@ -1448,17 +1449,21 @@ button#show-advanced {
   width: 32px;
   height: 32px;
 }
+
 .text-container {
   display: block;
   width: 100%;
+  margin-top: 16px;
 }
 h1.text-container {
   font-size: 1.5em;
-  line-height: 0.9em;
+  line-height: 1.1em;
+  font-weight: 300;
 }
+
 h2.text-container {
   font-size: 1.2em;
-  line-height: 0.9em;
+  line-height: 1em;
 }
 
 .img-caption {
@@ -1508,8 +1513,8 @@ a.name-container {
   grid-row: 1;
   grid-column: 1;
   z-index: 1;
-  margin-left: 16px;
-  margin-top: 8px;
+  margin-left: 4px;
+  margin-top: 4px;
   color: #000b;
 }
 
@@ -1538,13 +1543,15 @@ a.name-container {
   border-style: solid;
   border-color: gray;
   border-width: 1px;
-  margin: 0px 0.5em 1.5em 0em;
+  margin: 0em 0.5em 0em 0em;
   grid-row-start: 1;
+  display: grid;
+  grid-template-rows: 1.1em [user] auto [content];
   grid-row-end: 3;
   grid-column: 1;
   z-index: 0;
   min-width: 448px;
-  padding-top: 36px;
+  padding-top: 4px;
 }
 
 #texted-dark {

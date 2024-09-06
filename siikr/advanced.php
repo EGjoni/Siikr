@@ -2,104 +2,168 @@
 
 <div id="advanced-container">
     <dialog id="advanced-filter">
-    <form id="searchForm">
-   <!-- Search Over Section -->
-    <fieldset class="section">
-        <legend><h3>Search Over:</h3></legend>
-        <div class="grid">
-            <!-- plaintext -->
-            <div class="checkbox-pt-container">                               
-                <div id="over-container">
-                    <label class="field-type" id="nothingtop"></label>
-                    <label class="field-type" id="imgcheck"><input type="checkbox" name="search_over" value="over_img_text" checked="true" onchange="setChangeHintStatus()"> image alt/captions</label>
-                    <label class="field-type" id="nothing"></label>
-                    <label class="field-type" id="tagcheck"><input type="checkbox" name="search_over" value="over_tag_text" checked="true" onchange="setChangeHintStatus()"> tagtext</label>
-                    
-                    <fieldset class="checkbox-container" id="plaintext">
-                        <span class="radio-group"> 
-                        <legend><label><input type="checkbox" name="search_over" value="over_plaintext" checked="true" onchange="setChangeHintStatus()"> plaintext</label></legend>
-                        <label class="radio"><input type="radio" name="over_plaintext_location" value="in_post" onchange="setChangeHintStatus()"> in post</label>
-                        <label class="radio"><input type="radio" name="over_plaintext_location" value="in_ancestors" onchange="setChangeHintStatus()"> in ancestors</label>
-                        <label class="radio"><input type="radio" name="over_plaintext_location" value="either" checked="true" onchange="setChangeHintStatus()"> either</label>
-                        </span>
-                    </fieldset>        
-                </div>                
-            </div>
-        </div>
-    </fieldset>
+        <form id="searchForm">
+        <label class="section" id="include-reblogs-lbl">
+            <input type="checkbox" id="include-reblogs" name="fp_include_reblogs" onchange="updateState(this)" checked="">Include reblogs</label>
+            <!-- Search Over Section -->
+            <fieldset class="section" id="searchOver">
+                <legend> 
+                    <label><input type="checkbox" id="textual" class="grouping" checked="" onchange="toggleNested('textual', true)"><h3>Search Over</h3></label>
+                </legend> 
+                <fieldset class="indent">
+                    <legend>
+                        <label>
+                            <input type="checkbox" id="self" class="grouping" checked="" onchange="toggleNested('self', true)">self
+                        </label>
+                    </legend>
+                    <div class="indent">
+                        <input type="checkbox" id="sp_self_text" name="sp_self_text" onchange="updateState(this)" checked=""> content
+                        <input type="checkbox" id="sp_self_media" name="sp_self_media" onchange="updateState(this)" checked=""> media text
+                        <input type="checkbox" id="sp_self_mentions" name="sp_self_mentions" onchange="updateState(this)" checked=""> mentions
+                        <input type="checkbox" id="sp_tagtext" name="sp_tagtext" onchange="updateState(this)" checked=""> tags
+                    </div>    
+                </fieldset>
+                <fieldset class="indent">
+                    <legend>
+                        <label>
+                            <input type="checkbox" id="trail" class="grouping" checked="" onchange="toggleNested('trail', true)">trail
+                        </label>
+                    </legend>
+                    <div class="indent">
+                        <input type="checkbox" id="sp_trail_text" name="sp_trail_text" onchange="updateState(this)" checked=""> content
+                        <input type="checkbox" id="sp_trail_media" name="sp_trail_media" onchange="updateState(this)" checked=""> media text
+                        <input type="checkbox" id="sp_trail_mentions" name="sp_trail_mentions" onchange="updateState(this)" checked=""> mentions
+                        <input type="checkbox" id="sp_trail_usernames" name="sp_trail_usernames" onchange="updateState(this)" checked=""> usernames
+                    </div>
+                </fieldset>
+            </fieldset>
 
-    <!-- Must Have Section -->
-    <fieldset class="section">
-        <legend><h3>Must Have:</h3></legend>
-        <div class="grid">
-            <!-- Images -->
-            <div class="checkbox-container">
-                <fieldset class="radio-group disabled">
-                    <legend><label><input type="checkbox" name="result_must_have" value="images" onchange="toggleRadioButtons(this)"/> Images</label></legend>
-                    <label><input type="radio" name="images_location" value="in_post" disabled/> in post</label>
-                    <label><input type="radio" name="images_location" value="in_ancestors" disabled/> in ancestors</label>
-                    <label><input type="radio" name="images_location" value="either" checked="true"disabled/> either</label>
-                </fieldset>
-            </div>
-            <!-- Videos -->
-            <div class="checkbox-container">
-                <fieldset class="radio-group">
-                    <legend><label><input type="checkbox" name="result_must_have" value="video" onchange="toggleRadioButtons(this)"/> Videos</label></legend>
-                    <label><input type="radio" name="video_location" value="in_post" disabled/> in post</label>
-                    <label><input type="radio" name="video_location" value="in_ancestors" disabled/> in ancestors</label>
-                    <label><input type="radio" name="video_location" value="either" checked="true" disabled/> either</label>
-                </fieldset>
-            </div>
-            <!-- Audio -->
-            <div class="checkbox-container">
-                <fieldset class="radio-group">
-                    <legend><label><input type="checkbox" name="result_must_have" value="audio" onchange="toggleRadioButtons(this)"/> Audio</label></legend>
-                    <label><input type="radio" name="audio_location" value="in_post" disabled/> in post</label>
-                    <label><input type="radio" name="audio_location" value="in_ancestors" disabled/> in ancestors</label>
-                    <label><input type="radio" name="audio_location" value="either" checked="true" disabled> either</label>
-                </fieldset>
-            </div>
-            <!-- Link -->
-            <div class="checkbox-container">
-                <fieldset class="radio-group">
-                    <legend><label><input type="checkbox" name="result_must_have" value="link" onchange="toggleRadioButtons(this)"/> Link</label></legend>
-                    <label><input type="radio" name="link_location" value="in_post" disabled/> in post</label>
-                    <label><input type="radio" name="link_location" value="in_ancestors" disabled/> in ancestors</label>
-                    <label><input type="radio" name="link_location" value="either" checked="true" disabled/> either</label>
-                </fieldset>
-            </div>
-            <!-- Chat -->
-            <div class="checkbox-container">
-                <fieldset class="radio-group">
-                    <legend><label><input type="checkbox" name="result_must_have" value="chat" onchange="toggleRadioButtons(this)"/> Chat</label></legend>
-                    <label><input type="radio" name="chat_location" value="in_post" disabled/> in post</label>
-                    <label><input type="radio" name="chat_location" value="in_ancestors" disabled/> in ancestors</label>
-                    <label><input type="radio" name="chat_location" value="either" checked="true" disabled/> either</label>
-                </fieldset>
-            </div>
-            <!-- Ask -->
-            <div class="checkbox-container">
-                <fieldset class="radio-group">
-                    <legend><label><input type="checkbox" name="result_must_have" value="ask" onchange="toggleRadioButtons(this)"/> Ask</label></legend>
-                    <label><input type="radio" name="ask_location" value="in_post" disabled/> in post</label>
-                    <label><input type="radio" name="ask_location" value="in_ancestors" disabled/> in ancestors</label>
-                    <label><input type="radio" name="ask_location" value="either" checked="true" disabled/> either</label>
-                </fieldset>
-            </div>
+            <!-- Must Have Section -->
+            <fieldset class="section">
+                <legend><h3>Must Have:</h3></legend>
+                <div class="grid">
+                    <!-- Images -->
+                    <div class="checkbox-container">
+                        <fieldset class="radio-group disabled">
+                            <legend><label><input type="checkbox" name="result_must_have" value="images" onchange="toggleRadioButtons(this)"/> Images</label></legend>
+                            <label><input type="radio" name="images_location" value="in_post" disabled/> in post</label>
+                            <label><input type="radio" name="images_location" value="in_ancestors" disabled/> in ancestors</label>
+                            <label><input type="radio" name="images_location" value="either" checked="true"disabled/> either</label>
+                        </fieldset>
+                    </div>
+                    <!-- Videos -->
+                    <div class="checkbox-container">
+                        <fieldset class="radio-group">
+                            <legend><label><input type="checkbox" name="result_must_have" value="video" onchange="toggleRadioButtons(this)"/> Videos</label></legend>
+                            <label><input type="radio" name="video_location" value="in_post" disabled/> in post</label>
+                            <label><input type="radio" name="video_location" value="in_ancestors" disabled/> in ancestors</label>
+                            <label><input type="radio" name="video_location" value="either" checked="true" disabled/> either</label>
+                        </fieldset>
+                    </div>
+                    <!-- Audio -->
+                    <div class="checkbox-container">
+                        <fieldset class="radio-group">
+                            <legend><label><input type="checkbox" name="result_must_have" value="audio" onchange="toggleRadioButtons(this)"/> Audio</label></legend>
+                            <label><input type="radio" name="audio_location" value="in_post" disabled/> in post</label>
+                            <label><input type="radio" name="audio_location" value="in_ancestors" disabled/> in ancestors</label>
+                            <label><input type="radio" name="audio_location" value="either" checked="true" disabled> either</label>
+                        </fieldset>
+                    </div>
+                    <!-- Link -->
+                    <div class="checkbox-container">
+                        <fieldset class="radio-group">
+                            <legend><label><input type="checkbox" name="result_must_have" value="link" onchange="toggleRadioButtons(this)"/> Link</label></legend>
+                            <label><input type="radio" name="link_location" value="in_post" disabled/> in post</label>
+                            <label><input type="radio" name="link_location" value="in_ancestors" disabled/> in ancestors</label>
+                            <label><input type="radio" name="link_location" value="either" checked="true" disabled/> either</label>
+                        </fieldset>
+                    </div>
+                    <!-- Chat -->
+                    <div class="checkbox-container">
+                        <fieldset class="radio-group">
+                            <legend><label><input type="checkbox" name="result_must_have" value="chat" onchange="toggleRadioButtons(this)"/> Chat</label></legend>
+                            <label><input type="radio" name="chat_location" value="in_post" disabled/> in post</label>
+                            <label><input type="radio" name="chat_location" value="in_ancestors" disabled/> in ancestors</label>
+                            <label><input type="radio" name="chat_location" value="either" checked="true" disabled/> either</label>
+                        </fieldset>
+                    </div>
+                    <!-- Ask -->
+                    <div class="checkbox-container">
+                        <fieldset class="radio-group">
+                            <legend><label><input type="checkbox" name="result_must_have" value="ask" onchange="toggleRadioButtons(this)"/> Ask</label></legend>
+                            <label><input type="radio" name="ask_location" value="in_post" disabled/> in post</label>
+                            <label><input type="radio" name="ask_location" value="in_ancestors" disabled/> in ancestors</label>
+                            <label><input type="radio" name="ask_location" value="either" checked="true" disabled/> either</label>
+                        </fieldset>
+                    </div>
+                </div>
+            </fieldset>
+            <button type="reset" onclick="removeHint()">Reset</button>
+            <button type="button" onclick="closeAdvanced()">Close</button>
+        </form>
+    </dialog>
+    <div id="nosdoubleout-container">
+    
+        <!-- Pre-create hidden "NO" elements -->
+        <div class="nos-container">
+            <div class="weeping-nos">NO</div>
+            <div class="weeping-nos">PLEASE NO</div>
+            <div class="weeping-nos">No!</div>
+            <div class="weeping-nos">nooooo</div>
+            <div class="weeping-nos">Oh god</div>
+            <div class="weeping-nos">NO</div>
+            <div class="weeping-nos">NO</div>
+            <div class="weeping-nos">THIS IS WRONG</div>
+            <div class="weeping-nos">NO</div>
+            <div class="weeping-nos">.tumblr.com.tumblr.com???</div>
+            <div class="weeping-nos">NO</div>
+            <div class="weeping-nos">NO</div>
+            <div class="weeping-nos">NO</div>
+            <div class="weeping-nos">Why would you do this</div>
+            <div class="weeping-nos">NO</div>
+            <div class="weeping-nos">WHYYYY</div>
+            <div class="weeping-nos">NO</div>
+            
         </div>
-    </fieldset>
-    <button type="reset" onclick="removeHint()">Reset</button>
-    <button type="button" onclick="closeAdvanced()">Close</button>
-</form>
-</dialog>
+</div>
 <output id="formOutput"></output>
+<style>
+    @keyframes rain {
+        0% { transform: translateY(1.2em); opacity: 0; }
+        20% { opacity: 1; }
+        100% { transform: translateY(500px); opacity: 0; }
+    }
+    .nos-container {
+        position: relative;
+        z-index: 1;
+        color: white;
+        filter: drop-shadow(2px 2px 1px black);
+    }
 
+    .input-container {
+        position: relative;
+        display: inline-block;
+    }
+
+    .weeping-nos {
+        position: absolute;
+        color: #ff8b88;
+        animation: rain 2s linear infinite;
+        display: none; /* Initially hidden */
+        top: 0;
+        white-space: nowrap;
+    }
+</style>
 <script>
     const all_possible_params = [
-        "sp_self_text", 
-	    "sp_trail_text",
-	    "sp_image_text",
-	    "sp_tag_text",
+        "sp_self_text", // v3,4
+        "sp_self_media", // v4
+        "sp_tag_text",  // v3,4
+        "sp_trail_text",  // v3,4
+        "sp_trail_media", // v3,4
+        "sp_trail_usernames", // v4
+        "sp_image_text",// v3
+        "fp_include_reblogs", //v4
         "fp_images",
         "fp_video",
         "fp_audio",
@@ -108,17 +172,18 @@
         "fp_ask"
     ]
     const default_search_params = {
-	sp_self_text : true, 
-	sp_trail_text : true,
-	sp_image_text : true,
-	sp_tag_text	: true
+        sp_self_text : true,
+        sp_self_media : true,
+        sp_self_mentions : true,
+        sp_tagtext : true,
+        
+        sp_trail_text : true,
+        sp_trail_media : true,
+        sp_trail_mentions : true,
+        sp_trail_usernames : true,
+        fp_include_reblogs : true
     };
-    var searchParams = {
-	sp_self_text : true, 
-	sp_trail_text : true,
-	sp_image_text : true,
-	sp_tag_text	: true
-    };
+    var searchParams = {...default_search_params};
 
     function toggleRadioButtons(checkbox) {
         const parentFieldset = checkbox.closest('.checkbox-container')?.querySelector('.radio-group');
@@ -136,6 +201,28 @@
             });
             radioLabels.forEach(label => label.classList.add('disabled'));
         }
+        setChangeHintStatus();
+    }
+
+    function toggleNested(parentId) {
+        const parentCheckbox = document.getElementById(parentId);
+        const enabled = parentCheckbox.checked && !parentCheckbox.disabled;
+        const childGroup = parentCheckbox.closest('fieldset');
+        if (childGroup) {
+        const childCheckboxes = childGroup.querySelectorAll('input[type="checkbox"]:not(#'+parentId+')');
+        childCheckboxes.forEach(childCheckbox => {
+            let parentElem = childCheckbox.parentElement.closest(".indent").parentElement.closest("fieldset").querySelector("legend input");
+            childCheckbox.disabled = !enabled || !parentElem.checked;
+            updateState(childCheckbox, childCheckbox.checked && !childCheckbox.disabled);
+        });
+        }
+        updateState(parentCheckbox, enabled);
+    }
+
+    function updateState(box, state=true) {
+        if(box.name !== undefined && !box.classList.contains("grouping")) {
+            searchParams[box.name] = state && box.checked ? true : false;
+        } 
         setChangeHintStatus();
     }
 
@@ -159,7 +246,6 @@
     }
 
     function setFormFromJSON(data) {
-        // Helper function to set the radio button value
         const setRadioButtonValue = (name, value) => {
             let val;
             switch (value) {
@@ -171,37 +257,7 @@
             const radio = document.querySelector(`input[name="${name}"][value="${val}"]`);
             if (radio) radio.checked = true;
         };
-
-        // Clear current form selections first
-        const allCheckboxes = document.querySelectorAll('input[type="checkbox"]');
-        const allRadios = document.querySelectorAll('input[type="radio"]');
-        allCheckboxes.forEach(checkbox => checkbox.checked = false);
-        //allRadios.forEach(radio => radio.checked = false);
-
-        var overcont = document.querySelector("#over-container");        
-        var textcheck = overcont.querySelector('input[name="search_over"][value="over_plaintext"]');
-        var searchSelf = data.self_text;
-        var searchAncestors = data.trail_text;
-        if(!searchSelf && !searchAncestors) {
-            textcheck.checked = false;
-        } else{
-            textcheck.checked = true;
-            if(searchSelf)
-                setRadioButtonValue("over_plaintext_location", 1);
-            if(searchAncestors)
-                setRadioButtonValue("over_plaintext_location", 2);
-            if(searchSelf && searchAncestors) 
-                setRadioButtonValue("over_plaintext_location", 3);
-        }
-        toggleRadioButtons(textcheck);
-
-        var tagcheck = overcont.querySelector('input[name="search_over"][value="over_tag_text"]');
-        var imgcheck = overcont.querySelector('input[name="search_over"][value="over_img_text"]');
-        tagcheck.checked = data.tag_text;
-        toggleRadioButtons(tagcheck);
-        imgcheck.checked = data.image_text;
-        toggleRadioButtons(imgcheck);
-
+        
         // Handle "Must Have" section
         const mustHaveFields = ['images', 'video', 'audio', 'link', 'chat', 'ask'];
         mustHaveFields.forEach(field => {
@@ -212,8 +268,12 @@
                 toggleRadioButtons(checkbox);
             }
         });
+        if(data["include_reblogs"] != null) {
+            include_reblogs_chk.checked = data["include_reblogs"];
+        }
         setChangeHintStatus();
     }
+    var include_reblogs_chk = document.getElementById("include-reblogs");
     function generateJSON() {
         var result = {};
         // Helper function to get the radio button value
@@ -226,21 +286,9 @@
             }
             return null;
         };
-        var overcont = document.querySelector("#over-container");
         
-        var textcheck = overcont.querySelector('input[name="search_over"][value="over_plaintext"]').checked;
-        var tagcheck = overcont.querySelector('input[name="search_over"][value="over_tag_text"]').checked;
-        var imgcheck = overcont.querySelector('input[name="search_over"][value="over_img_text"]').checked;
-
-        var searchSelf = overcont.querySelector('input[name="over_plaintext_location"][value="in_post"]').checked;
-        var searchAncestors = overcont.querySelector('input[name="over_plaintext_location"][value="in_ancestors"]').checked;
-        var searchEither = overcont.querySelector('input[name="over_plaintext_location"][value="either"]').checked;
-    
         var searchOver = {
-            sp_self_text : textcheck && (searchSelf || searchEither),
-            sp_trail_text : textcheck && (searchAncestors || searchEither),
-            sp_image_text : imgcheck,
-            sp_tag_text : tagcheck
+            ...searchParams
         }
         //"Must Have" section
         const mustHaveFields = ['images', 'video', 'audio', 'link', 'chat', 'ask'];
@@ -249,7 +297,7 @@
                 searchOver["fp_"+field] = getRadioButtonValue(field + '_location');
             }
         });
-
+        searchOver["fp_include_reblogs"] = include_reblogs_chk.checked;
         return searchOver;
     }
 
@@ -273,7 +321,7 @@
         searchParams = setChangeHintStatus();
         //document.getElementById("formOutput").textContent = JSON.stringify(searchParams);
         document.getElementById("advanced-filter").close();
-        
+
     }
 
     function setChangeHintStatus() {
@@ -288,13 +336,14 @@
         return newParams;
     }
 
-    function removeHint() { 
+    function removeHint() {
         document.getElementById("formOutput").textContent = "";
         searchParams = JSON.parse(JSON.stringify(default_search_params));
         optionsReset();
     }
 
-
+    let rateLimit = 200;
+    let pendingCall = null;
     document.addEventListener('DOMContentLoaded', function () {
         const dialog = document.querySelector("#advanced-filter");
         const dialogContent = document.getElementById('searchForm');
@@ -315,15 +364,87 @@
                 toggleRadioButtons(this);
             });
         });
+
         
-});
 
-function optionsModified() {
-    document.getElementById('show-advanced').style.setProperty('--notification-content', '""');
-}
+        let advancedButton = document.querySelector("button#show-advanced");
+        let noscontparent = document.querySelector("#nosdoubleout-container");
+        let weeper = noscontparent.querySelector(".nos-container");
+        let searchCont = advancedButton.parentNode;
+        let queryCont = searchCont.querySelector("#query");
+        searchCont.insertBefore(noscontparent, queryCont);
+        //advancedButton.parent.insertAfter(noscontparent, advancedButton);
+        function startRainingNo() {
+            const elements = weeper.querySelectorAll('.weeping-nos');
+            let num = 0;
+            elements.forEach(
+                (el) => {
+                    //el.style.display = 'block';
+                    num++;
+                    if(el.stayOn == true) return;
+                    el.stayOff = false;
+                    window.setTimeout(()=>{
+                        if(!el.stayOff) {
+                            el.stayOn = true;
+                            el.style.display = 'block';
+                            el.style.left = ((Math.random() * -15)-1) + 'em';
+                            el.style.fontSize = (1+(0.2*Math.random()))+'em';
+                            el.style.animation = 'rain '+(1.9+Math.random()*.03)+'s cubic-bezier(0.12, -0.01, 0.95, 0.36) infinite';
+                        }
+                    }, Math.random()*1500);
+                }
+            );
+        }
 
-function optionsReset() {
-    document.getElementById('show-advanced').style.setProperty('--notification-content', 'none');
-}
+        function stopRainingNo() {
+            const elements = weeper.querySelectorAll('.weeping-nos');
+            elements.forEach(el => {
+                el.style.display = 'none';
+                el.stayOff = true;
+                el.stayOn = false;
+            });
+        }
+        document.getElementById("username").addEventListener('keyup', (event)=>{
+            let inputField = event.target; 
+            if(inputField.value.split('.').length > 1) {
+                startRainingNo();
+                inputField.classList.add('input-shake');
+                return;
+            }
+            else {
+                inputField.classList.remove('input-shake');
+                stopRainingNo();
+            }
+            let value = inputField.value;
+            if(value.length <=3) {advancedButton.style.background = "none";}
+            else {
+                inputField.value = value.split('.tumblr.com')[0];
+                newCall = ()=>{advancedButton.style.background = "url(https://api.tumblr.com/v2/blog/"+value+".tumblr.com/avatar/64)";}
+                if(pendingCall == null) { 
+                    pendingCall = newCall;
+                    pendingCall();  
+                    window.setTimeout(()=>{pendingCall = null}, rateLimit);
+                } else {
+                    pendingCall = newCall;
+                    window.setTimeout(() => {
+                        console.log("g");
+                        if(pendingCall != null) {
+                            pendingCall();
+                            pendingCall = null;
+                        } else {"slow down!"}
+                    }, rateLimit);
+                }
+            }
+        })
+
+    });
+
+    function optionsModified() {
+        document.getElementById('show-advanced').style.setProperty('--notification-content', '""');
+    }
+
+    function optionsReset() {
+        document.getElementById('show-advanced').style.setProperty('--notification-content', 'none');
+    }
 </script>
 </div>

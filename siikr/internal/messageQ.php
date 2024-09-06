@@ -11,9 +11,7 @@ define("SERVER_EVENTS_PORT", "tcp://127.0.0.1:5550");
 define('MIN_SOCKET_CONNECT_WAIT', 5110);
 register_shutdown_function('kill_push_socket');
 $zmq_context = new ZMQContext(1, true);
-//we initialize one socket per user and reuse it for all serverside notifications
-//eachuser also has a socket allocated in messageSender.php for all user-broadcasted messages.
-$zmq_sesssion_push_socket = new ZMQSocket($zmq_context, ZMQ::SOCKET_PUSH, 'fmss'.$zmqsock_identifier, 'initializeFunctionMessageSenderSockets');
+
 function initializeFunctionMessageSenderSockets(ZMQSocket $socket, $persistent_id = null) {    
     $socket->setSockOpt(ZMQ::SOCKOPT_LINGER, 2000);
     $socket->setSockOpt(ZMQ::SOCKOPT_RECONNECT_IVL, 100);
@@ -21,6 +19,10 @@ function initializeFunctionMessageSenderSockets(ZMQSocket $socket, $persistent_i
     $socket->connect(SERVER_EVENTS_PORT);
     usleep(MIN_SOCKET_CONNECT_WAIT);
 }
+
+//we initialize one socket per user and reuse it for all serverside notifications
+//eachuser also has a socket allocated in messageSender.php for all user-broadcasted messages.
+$zmq_sesssion_push_socket = new ZMQSocket($zmq_context, ZMQ::SOCKET_PUSH, 'fmss'.$zmqsock_identifier, 'initializeFunctionMessageSenderSockets');
 
 $zmq_global_event_queue = [];
 $zmq_dedup_fired = []; //associative array of eventpatterns and messages (used for message de-duplication)
@@ -73,7 +75,7 @@ function fireEventQueue()
         //(since by the time they get to any client that wants to do a db_call in response, any relevant transactions will have been atomically commited)
         if(!hasFired($eventPattern, $rawMsg)) {
             $message = json_encode($rawMsg);
-            $zmq_sesssion_push_socket->send($eventPattern . "  " . $message);
+            $result = $zmq_sesssion_push_socket->send($eventPattern . "  " . $message);
             setFired($eventPattern, $rawMsg);
         }
     }
@@ -118,7 +120,8 @@ function sendEvent($eventPattern, $message = [])
 {
     global $zmq_sesssion_push_socket;
     global $time_since_zmq_context_initialization;
-    $zmq_sesssion_push_socket->send($eventPattern . "  " . json_encode($message));
+    $returned = $zmq_sesssion_push_socket->send($eventPattern . "  " . json_encode($message));
+    return $returned;
 }
 
 function kill_push_socket()

@@ -15,10 +15,11 @@ const getPotentiallySharedWorker = function (url) {
    * @param {int} registrationStringLength OPTIONAL a number indicating how long the registration string can be 
    * before listeners which specify themselves as removable start getting removed. 
    */
-  function PseudoSocket(eventSourceURL, registrationStringLength) {
+  function PseudoSocket(eventSourceURL, suffix="") {
     var tagDelimiter = " !!TD!! ";
     var workerService = getPotentiallySharedWorker("/js/pseudosocket/eventSourceWorker.js?v=" + scriptVersion);
     var eventsrc_url = eventSourceURL;
+    var extraJunk = "";
     var responseTagCallbackMap = {};
     var regLength = 25000;
     this.isConnected = false;
@@ -37,7 +38,7 @@ const getPotentiallySharedWorker = function (url) {
       },
       true
     );
-    if (eventSourceURL == undefined) {
+    if (eventsrc_url == undefined) {
       eventsrc_url = "../../routing/serverEvents.php";
       //window.location.protocol + window.location.hostname + "../../php/serverEvents.php";
     }
@@ -245,7 +246,7 @@ const getPotentiallySharedWorker = function (url) {
       if (registrationArray.length > 0) {
         workerService.port.postMessage({
           register: true,
-          eventURL: eventsrc_url,
+          eventURL: eventsrc_url+extraJunk,
           listeners: registrationArray
         });
         this.graceTimer.firstConnect = false;
@@ -284,10 +285,10 @@ const getPotentiallySharedWorker = function (url) {
      * Ideally, you should call this function if you have already called the connect()
      * function, but wish to register a large number of new listeners with the pSocket.
      */
-    this.disconnect = () => {
-      if (othis.isConnected) {
-        othis.isConnected = false;
-      }
+    this.disconnect = () => {      
+      othis.isConnected = false;
+      workerService.port.postMessage({ close: true });
+      this.graceTimer.firstConnect = true;
     };
     var othis = this;
     /**
@@ -384,11 +385,11 @@ const getPotentiallySharedWorker = function (url) {
         listenerObj.queryObj = queryObject;
       }
   
-      if (registrationRequired) {
+      //if (registrationRequired) {
         if (this.node.isConnected) {
           this.addEvs(listenerObj);
         }
-      }
+      //}
     }
   
     addEvs(listenerObj) {

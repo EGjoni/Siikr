@@ -1,20 +1,30 @@
 <?php 
 require_once 'globals.php';
 require_once 'disk_stats.php';
-
+require_once 'post_processor.php';
+//echo phpversion();
 $archiver_uuid = uuid_create(UUID_TYPE_RANDOM);
+$archiver_version = '3';
 $userInfo = posix_getpwuid(posix_geteuid());
 $db = new SPDO("pgsql:dbname=$db_name", $userInfo["name"], null);
+$media_table = 'media';
 
 require_once 'lease.php';
 
 //next two lines are so that we can show the user any search results while we happen to come across them in the indexing process
-$search_query = $_GET['search_query']; 
-$search_options = $_GET['search_options'];
+$search_query = @$_GET['search_query']; 
+$search_options = @$_GET['search_options'];
 $server_blog_info = [];
 $blog_uuid = null;
+function rollback() {
+    global $db;
+    echo "nixing";
+    $db->rollback();
+}
 
-if($argc > 1) $search_id = $argv[1];
+$vsplit = explode(" ", $argv[1]);
+if(count($vsplit) > 0) $search_id = $vsplit[0];
+if(count($vsplit) > 1 && $vsplit[1] == "dev") register_shutdown_function('rollback');
 
 $current_blog = $db->prepare("SELECT blog_uuid FROM active_queries WHERE search_id = ? LIMIT 1");
 $blog_uuid = $current_blog->exec([$search_id])->fetchColumn();
@@ -58,88 +68,12 @@ if(!ensureSpace($db, $db_blog_info, $server_blog_info)) {
 }
 
 
-
 sendEvent("INDEXING!$search_id", $archiving_status); //broadcast a zmq message for anyone interested to know about the blog indexing status.
 
 
-function extract_blocks_from_content($content, &$soFar, $mode=0b01) {
-    $text_content = [];
-    $blockct = 0;
-    $possible_encodings =['UTF-8', 'ASCII', 'JIS', 'EUC-JP', 'SJIS', 'ISO-8859-1'];
-    foreach ($content as $block) {
-        try {
-            if (property_exists($block, 'text')) {
-                if(property_exists($block, "subtype")) {
-                    if ($block->subtype == 'chat')
-                        $soFar["has_chat"] |= $mode;
-                }
-                $text_content[] = mb_convert_encoding($block->text, 'UTF-8', $possible_encodings);
-                $soFar["has_text"] |= $mode;
-            }
-            if(property_exists($block, "type")) {
-                if ($block->type == 'image') {
-                    $soFar["has_images"] |= $mode;
-                    $img_info = ["url" => $block->media[0]->url];
-                    if(property_exists($block, "caption")) {
-                        $img_info["caption"] = mb_convert_encoding($block->caption, 'UTF-8', $possible_encodings);
-                        $text_content[] = mb_convert_encoding($block->caption, 'UTF-8', $possible_encodings);
-                    }
-                    if(property_exists($block, "alt_text")) {
-                        $img_info["alt_text"] = mb_convert_encoding($block->alt_text, 'UTF-8', $possible_encodings);
-                        $text_content[] =  mb_convert_encoding($block->alt_text, 'UTF-8', $possible_encodings);
-                    }
-                    $soFar["images"][] = $img_info;
-                }
-                if ($block->type =='audio')
-                    $soFar["has_audio"] |= $mode;
-                if ($block->type == 'video')
-                    $soFar["has_video"] |= $mode;
-                if ($block->type =='link')
-                    $soFar["has_link"] |= $mode;
-            }
-        } catch (Exception $e) {
-            echo "error decoding text $e";
-        }
-        $blockct++;
-    }
-    return implode("\n", $text_content);
-}
-
-
-function extract_text_from_post($post) {
-    $soFar = 
-    ["self_text" => "", 
-    "trail_text" => "",
-    "title" => "",
-    "has_text" => 0b00, 
-    "has_link" => 0b00, 
-    "has_chat" => 0b00,
-    "has_ask" => 0b00, 
-    "has_images" => 0b00,
-    "has_audio" => 0b00,
-    "has_video" => 0b00,
-    "images" => []]; 
-    $self_text = extract_blocks_from_content($post->content, $soFar, 0b01);
-    foreach($post->layout as $layout) {
-        if(property_exists($layout->type, "ask"))
-            $soFar["has_ask"] |= 0b01;
-    }
-    $trail_text = '';
-    if (property_exists($post, 'trail')) {
-        foreach ($post->trail as $trail_item) {
-            $trail_text .= "\n" . extract_blocks_from_content($trail_item->content, $soFar, 0b10)."[skrtgrblgnd]";
-            foreach($trail_item->layout as $layout) {
-                $soFar["has_ask"] |= 0b10;
-            }
-        }
-    }
-    $soFar["trail_text"] = $trail_text;
-    $soFar["self_text"] = $self_text; 
-    return (object)$soFar;
-}
-
 try {
     $before_id = null;
+    $set_post_deleted = $db->prepare("UPDATE posts SET deleted = TRUE WHERE post_id = :post_id");
     $stmt_update_blog = $db->prepare(
         "UPDATE blogstats SET most_recent_post_id = :most_recent_post_id, 
                         post_id_last_indexed = :post_id_successfully_indexed, 
@@ -150,33 +84,104 @@ try {
                         success = :success, 
                         is_indexing = :is_indexing WHERE blog_uuid = :blog_uuid");
     $stmt_update_blogstat_count = $db->prepare(
-        "UPDATE blogstats SET most_recent_post_id = :most_recent_post_id,
+        "UPDATE blogstats SET 
                         post_id_last_attempted = :post_id_last_attempted, 
                         indexed_post_count = :indexed_count,
                         serverside_posts_reported = :serverside_posts_reported,
                         success = :success, 
                         is_indexing = :is_indexing WHERE blog_uuid = :blog_uuid");
 
-    //SELECT merge_tsvector_json(:texts::jsonb) AS tsvector_result
-    $stmt_insert_post = $db->prepare(
-        "INSERT INTO posts (post_id, blog_uuid, post_date, post_url, 
-                            slug, blocks, simple_ts_vector, english_ts_vector,
-                            tag_text, has_text, has_link, has_chat, has_ask, has_images, has_video, has_audio) 
-                    VALUES (:post_id, :blog_uuid, to_timestamp(:post_date), :post_url,
-                        :slug, :blocks, setWeight(to_tsvector('simple', :vec_tags), 'A') || setWeight(to_tsvector('simple', :self_text), 'B') || setWeight(to_tsvector('simple', :trail_text), 'C') || setWeight(to_tsvector('simple', :image_text), 'D'),
-                        setWeight(to_tsvector('en_us_hunspell', :vec_tags), 'A') || setWeight(to_tsvector('en_us_hunspell', :self_text), 'B') || setWeight(to_tsvector('en_us_hunspell', :trail_text), 'C') || setWeight(to_tsvector('en_us_hunspell', :image_text), 'D'), :raw_tags, :has_text, :has_link, :has_chat, :has_ask, :has_images, :has_video, :has_audio)
-                    --VALUES (:post_id, :blog_uuid, to_timestamp(:post_date), :post_url,          
-                    -- following two lines are for after reworking the indexing schema and will replace the above two lines
-                    --  :slug, :blocks, setWeight(to_tsvector('simple', :vec_tags), 'A') || setWeight(to_tsvector('simple', :self_text), 'B') || setWeight(to_tsvector('simple', :trail_text), 'C') || setWeight(to_tsvector('simple', :username_text), 'D'),
-                    --   setWeight(to_tsvector('en_us_hunspell', :vec_tags), 'A') || setWeight(to_tsvector('en_us_hunspell', :self_text), 'B') || setWeight(to_tsvector('en_us_hunspell', :trail_text), 'C') || setWeight(to_tsvector('en_us_hunspell', :username_text), 'D'),
-                            ");
+    /**
+     * with two tsvector columns we can have 
+     * ts_content:
+     *  self_text = 'A'
+     *  self_text_mentions = 'B'
+     *  trail_text = 'C' 
+     *  trail_text_mentions = 'D' 
+     * 
+     * ts_meta: 
+     *  tag_text = 'A'
+     *  self_media = 'B'
+     *  trail_media = 'C'
+     *  trail_usernames = 'D'
+     * 
+     * english_stem_simple 
+     *  self_text = 'A'
+     *  self_media = 'B' 
+     *  self_media = 'C'
+     *  trail_media = 'D'
+     */
+    
+    /**columns that don't need us to do extra junk*/
+    $unprocessed_columns = ["blog_uuid", "tag_text", "index_version"];
+    $unprocessed_str = ""; foreach($unprocessed_columns as $col) $unprocessed_str .= ", :$col as $col";
+    $insert_post_column_list = ["post_date", "blocksb", "is_reblog", "hit_rate", "en_hun_simple", "ts_meta", ...$unprocessed_columns];
+    $withrec = "WITH rec AS (SELECT :post_id::BIGINT AS post_id, 
+                to_timestamp(:post_date::INT) AS post_date,
+                :blocksb::JSON AS blocksb,
+                :is_reblog::BOOLEAN AS is_reblog,
+                :hit_rate::FLOAT AS hit_rate,
+                :has_text::has_content as has_text, :has_link::has_content as has_link, :has_chat::has_content as has_chat, 
+                :has_ask::has_content as has_ask, :has_images::has_content as has_images, :has_video::has_content as has_video, 
+                :has_audio::has_content as has_audio $unprocessed_str, ";
+    $post_postinsert = "
+    setWeight(to_tsvector('en_us_hun_simple', :tag_text), 'A')
+    || setWeight(to_tsvector('en_us_hun_simple', :self_media_text), 'B') 
+    || setWeight(to_tsvector('en_us_hun_simple', :trail_media_text), 'C') 
+    || setWeight(to_tsvector('simple', :trail_usernames), 'D') as ts_meta
+    )";
+   
+    //slowish variant when usermentions are included
+    $nomenA = "setWeight(to_tsvector('en_us_hun_simple', :self_no_mentions), 'A')::TEXT"; 
+    $wmenB = "(SELECT replace(setWeight(to_tsvector('en_us_hun_simple', :self_with_mentions), 'B')::TEXT, '@siikr.tumblr.com', ''))::TEXT";
+    $nomenC = "setWeight(to_tsvector('en_us_hun_simple', :trail_no_mentions), 'C')::TEXT";
+    $wmenD = "(SELECT replace(setWeight(to_tsvector('en_us_hun_simple', :trail_with_mentions), 'D')::TEXT, '@siikr.tumblr.com', ''))::TEXT";
+    //$stem_tags = "setWeight(to_tsvector('english_stem_simple', :tag_text), 'A') || (SELECT replace(setWeight(to_tsvector('english_stem_simple', :self_with_mentions), 'B')::TEXT, '@siikr.tumblr.com', ''))::TEXT";
+    $doesMention = "
+    ($nomenA || ' ' || $wmenB)::tsvector || 
+    ($nomenC || ' ' || $wmenD)::tsvector as en_hun_simple,
+    ";
+    //faster variant when no user mentions
+    $noMention = "setWeight(to_tsvector('en_us_hun_simple', :self_text_regular), 'A') || setWeight(to_tsvector('en_us_hun_simple', :trail_text_regular), 'C') as en_hun_simple,";
+    
+    
+   
+
+    $insert_only= "INSERT INTO posts (post_id, ".implode(", ",$insert_post_column_list).") 
+                    SELECT :post_id, ".implode(", rec.", $insert_post_column_list)." FROM rec";
+    $recMap = ""; foreach($insert_post_column_list as $rec) {$recMap.= ", $rec = rec.$rec";}
+    $recMap = ltrim($recMap,",");
+    $update_only = "UPDATE posts SET $recMap FROM rec WHERE posts.post_id = :post_id AND posts.index_version < :index_version";
+
+    $stmt_mention_insert_post = $db->prepare("$withrec $doesMention $post_postinsert $insert_only");
+    $stmt_nomention_insert_post = $db->prepare("$withrec $noMention $post_postinsert $insert_only");
+    $update_mention_versioned_post = $db->prepare("$withrec $doesMention $post_postinsert $update_only");
+    $update_nomention_versioned_post = $db->prepare("$withrec $noMention $post_postinsert $update_only");
+
+
+    $delete_existing_mp_links = $db->prepare("DELETE FROM media_posts WHERE post_id = :post_id");
+
     $stmt_insert_tag = $db->prepare("INSERT INTO tags (tag_name, tag_simple_ts_vector) VALUES (:tag_text, to_tsvector('simple', :tag_text)) ON CONFLICT (tag_name) DO UPDATE SET tag_name = Excluded.tag_name RETURNING tag_id");
     $stmt_insert_posts_tags = $db->prepare("INSERT INTO posts_tags (blog_uuid, post_id, tag_id) VALUES(?, ?, ?) ON CONFLICT DO NOTHING");
-    $stmt_insert_image = $db->prepare("INSERT INTO images (img_url, caption_vec, alt_text_vec) VALUES (:img_url, setWeight(to_tsvector('simple', :caption), 'A') || setWeight(to_tsvector('en_us_hunspell', :caption), 'B'), setWeight(to_tsvector('simple', :alt_text), 'A') || setWeight(to_tsvector('en_us_hunspell', :alt_text), 'B')) ON CONFLICT (img_url) DO UPDATE SET img_url = Excluded.img_url RETURNING image_id");
-    $stmt_insert_posts_images = $db->prepare("INSERT INTO images_posts (post_id, image_id) VALUES (?, ?) ON CONFLICT DO NOTHING");
-    $get_oldest_indexed_post = $db->prepare("SELECT post_id FROM posts where blog_uuid = :blog_uuid ORDER BY post_date ASC LIMIT 1");
     
-    $stmt_get_post_info = $db->prepare("SELECT post_id as id, EXTRACT(epoch FROM post_date)::INT as timestamp FROM posts where post_id = :post_id");
+    $stmt_insert_media = $db->prepare( //My kingdom! My kingdom for unique multi-column hash constraint support!
+        "WITH record AS (
+        SELECT ROW(:media_url, :preview_url, LEFT(:title, 250), LEFT(:description, 1000))::media_info AS r), 
+        existing AS (SELECT media_id FROM $media_table WHERE media_meta = (SELECT r FROM record) LIMIT 1), 
+        inserted AS (
+            INSERT INTO $media_table (media_meta, mtype) 
+            SELECT r, :media_type FROM record WHERE NOT EXISTS (SELECT 1 FROM existing) RETURNING media_id) 
+        SELECT media_id FROM inserted UNION ALL SELECT media_id FROM existing LIMIT 1");
+
+    $stmt_insert_posts_media = $db->prepare("INSERT INTO media_posts (post_id, media_id) VALUES (?, ?) ON CONFLICT DO NOTHING");
+    $get_oldest_indexed_post = $db->prepare("SELECT post_id FROM posts where blog_uuid = :blog_uuid AND deleted = FALSE ORDER BY post_date ASC LIMIT 1");
+    //this line is for upgrading posts of an old version
+    $get_newest_obsolete_post =  $db->prepare("SELECT post_id, EXTRACT(epoch FROM post_date)::INT as timestamp, index_version FROM posts where blog_uuid = :blog_uuid AND index_version < '$archiver_version' 
+                        AND deleted = FALSE 
+                        AND post_date < to_timestamp(:max_date::INT) ORDER BY post_date DESC LIMIT 1");
+    
+    
+    $stmt_get_post_info = $db->prepare("SELECT post_id as id, EXTRACT(epoch FROM post_date)::INT as timestamp, index_version FROM posts where post_id = :post_id");
     //$post_check_stmt = $db->prepare(getTextSearchString($search_query, "p.post_id = :post_id"));
     $set_blog_success_status = $db->prepare("UPDATE blogstats SET success = ?, is_indexing = FALSE WHERE blog_uuid = ?");
     
@@ -187,18 +192,56 @@ try {
         $post_id_last_attempted = $db_blog_info->post_id_last_attempted;
         //next line is for debug. delete when done.
         //$smallest_post_id_indexed_info = $db->prepare("SELECT post_id, EXTRACT(epoch FROM post_date)::INT as timestamp FROM posts where blog_uuid = :blog_uuid ORDER BY post_id ASC LIMIT 1")->exec([$blog_uuid])->fetch(PDO::FETCH_OBJ);
-        $oldest_post_id_indexed =  $get_oldest_indexed_post->exec(["blog_uuid"=>$blog_uuid])->fetchColumn();
-
+        $oldest_post_id_indexed =  $get_oldest_indexed_post->exec(["blog_uuid"=>$blog_uuid])->fetchColumn();          
         $most_recent_post_info = $stmt_get_post_info->exec([$most_recent_post_id])->fetch(PDO::FETCH_OBJ);
-        if($post_id_last_indexed == null) $post_id_last_indexed = $oldest_post_id_indexed->post_id;
-        $post_last_indexed_info = $stmt_get_post_info->exec([$post_id_last_indexed])->fetch(PDO::FETCH_OBJ);
-        $post_last_attempted_info = $stmt_get_post_info->exec([$post_id_last_attempted])->fetch(PDO::FETCH_OBJ);
-        $oldest_post_indexed_info = $stmt_get_post_info->exec([$oldest_post_id_indexed])->fetch(PDO::FETCH_OBJ);
+        if($most_recent_post_info->index_version < $archiver_version) { //start fresh if the posts are indexed with an old version
+            unset($oldest_post_id_indexed, $post_id_last_indexed, $post_id_last_attempted, $most_recent_post_info, $most_recent_post_id);
+        } else {
+            if($post_id_last_indexed == null) $post_id_last_indexed = $oldest_post_id_indexed->post_id;
+            $post_last_indexed_info = $stmt_get_post_info->exec([$post_id_last_indexed])->fetch(PDO::FETCH_OBJ);            
+            $post_last_attempted_info = $stmt_get_post_info->exec([$post_id_last_attempted])->fetch(PDO::FETCH_OBJ);
+            $oldest_post_indexed_info = $stmt_get_post_info->exec([$oldest_post_id_indexed])->fetch(PDO::FETCH_OBJ);
+        }
     }
     
     $oldest_server_post = call_tumblr($blog_name, 'posts', ['limit' => 1, 'npf' => 'true', 'sort' => 'asc'])->posts[0];
     
+
+    function insert_media(&$db_post_obj, &$media_list) {
+        global $stmt_insert_media, $possible_encodings;
+        foreach ($media_list as &$med) {
+            $media_item = (object)$med;
+            $title = property_exists($media_item, "title") ? substr($media_item->title, 0, 250) : NULL;
+            $description =  property_exists($media_item, "description") ? substr($media_item->description, 0, 1000) : NULL;
+            if($title != null) $title = ensure_valid_string($title);
+            if($description != null) $description = ensure_valid_string($description);
+            $preview_url = property_exists($media_item, "preview_url") ? $media_item->preview_url : NULL;
+            $will_insert = 
+            ["media_url" => $media_item->media_url, 
+            "preview_url"=> $preview_url, 
+            "title" => $title, 
+            "description" => $description, 
+            "media_type" => $media_item->type];
+            $media_id = $stmt_insert_media->exec($will_insert)->fetchColumn();
+            $med["db_id"] = $media_id;
+            $db_post_obj->media_by_id[$media_id] = $media_item->media_url;
+            $db_post_obj->media_by_url[$media_item->media_url][] = $media_id;
+        }
+    }
+
+    /**
+     * todo: for wordclouds, this function will specify that a blog should be completely removed from the global
+     * wordcloud statistics and analyzed from scratch (used on index upgrades as they can substantiallly alter the data)
+     **/
+    function addToReanalysisQueue($blog_uuid) {}
+
+    /**
+     * todo: for wordclouds, this function inform the wordcloud system that a blog has new posts to accoutn for
+     */
+    function addToAugmentQueue($blog_uuid) {}
+
     $loop_count = 0;
+    $upgradeCount = 0; //counts number of posts that have been upgraded
 
 
     /**LOGIC: 
@@ -209,7 +252,7 @@ try {
     */
     $gap_queue = [null];
     if($oldest_post_id_indexed != null) 
-        array_push($gap_queue, $oldest_post_indexed_info);
+        array_push($gap_queue, $oldest_post_indexed_info);    
     if($db_blog_info->success == false && $post_id_last_indexed != $oldest_post_id_indexed) 
         array_push($gap_queue, $post_last_indexed_info);
     $max_loop_count = count($gap_queue) * 2;
@@ -219,34 +262,37 @@ try {
         $before_time = $before_info == null? null:$before_info->timestamp;
         $before_id = $before_info->id;
         do {
+            $isUpgrade = false; //gets set to true for notifications downstream
             $disk_use = get_disk_stats();        
-            $params = ['limit' => 50, 'npf' => 'true', 'before' => $before_time, 'sort' => 'desc'];
+            $params = ['limit' => 50, 'notes_info' => "true", 'npf' => 'true', 'before' => $before_time, 'sort' => 'desc'];
             $server_blog_info = call_tumblr($blog_name, 'posts', $params);
+            
             
             foreach ($server_blog_info->posts as $post) {
                 $post->id = $post->id_string;
-                if($most_recent_post_id == null || $post->timestamp > $most_recent_post_info->timestamp) {
+                if(@$most_recent_post_id == null || $post->timestamp > @$most_recent_post_info->timestamp) {
                     $most_recent_post_id = (int)$post->id;
                     $most_recent_post_info = $post;
                 }
-                if($oldest_post_id_indexed == null || $post->timestamp < $oldest_post_indexed_info->timestamp) {
+                if(@$oldest_post_id_indexed == null || $post->timestamp < @$oldest_post_indexed_info->timestamp) {
                     $oldest_post_id_indexed = (int)$post->id;
                     $oldest_post_indexed_info = $post;
                 }
                 
                 if(!amLeader($db, $blog_uuid, $archiver_uuid)) {
-                    $resolve_queries->execute(["blog_uuid" => $blog_uuid]);
+                    //$resolve_queries->execute(["blog_uuid" => $blog_uuid]);
                     $abandonLease->execute(["leader_uuid" => $archiver_uuid]);
                     exit;
                 }
                 $get_active_queries->execute(["blog_uuid" => $blog_uuid]);
                 $searches_array = $get_active_queries->fetchAll(PDO::FETCH_OBJ);
-                
+                //error_log("ATTEMPTING TO SEND: Processing!".$searches_array[0]->search_id);
+                //sendEventToAll($searches_array, "PROCESSING!", json_encode($arc_stat));
                 $post_id = $post->id;
                 $before_info = $post;
                 $before_time = $before_info->timestamp;
                 
-                $db_post_obj = extract_text_from_post($post);
+                $db_post_obj = extract_db_content_from_post($post);
                 $tags = $post->tags;
                 
                 if($post_id_last_attempted == null) {
@@ -256,7 +302,6 @@ try {
                 try {
                     $response_post_num++;
                     $stmt_update_blogstat_count->exec([
-                        "most_recent_post_id" => $most_recent_post_id,
                         "post_id_last_attempted" => $post_id, 
                         "indexed_count" => $db_blog_info->indexed_post_count,
                         "serverside_posts_reported" => $server_blog_info->total_posts,
@@ -264,32 +309,27 @@ try {
                         "success" => 'FALSE', 
                         "blog_uuid" => $blog_uuid]);
                     $db->beginTransaction();
+
                     // Insert post into posts table
                     $tag_rawtext = implode('\n#', $tags);
                     if(strlen($tag_rawtext) > 0) $tag_rawtext = "#$tag_rawtext";
                     $tag_tstext = implode('\n', $tags);
 
-                    foreach ($db_post_obj->images as &$img) {
-                        $image = (object)$img;
-                        $alt_text = $image->alt_text ?? null;
-                        $caption = $image->caption ?? null;
-                        $will_insert = ["img_url" => $image->url, "caption"=> $caption,  "alt_text" => $alt_text];
-                        $image_id = $stmt_insert_image->exec($will_insert)->fetchColumn();
-                        $img["db_id"] = $image_id;
-                    }
+                    $db_post_obj->media_by_id = [];
+                    $db_post_obj->media_by_url = [];
+                    
+                    insert_media($db_post_obj, $db_post_obj->self_media_list);
+                    insert_media($db_post_obj, $db_post_obj->trail_media_list);
                 
-                    list($transformed, $for_db) = transformNPF($post, $db_post_obj->images);
+                    $transformed= transformNPF($post, $db_post_obj);
 
-                    $stmt_insert_post->exec(
-                        ["post_id" =>$post->id, 
-                        "post_url" => $post->post_url,
-                        "slug" => $post->slug,
+                    $common_inserts = ["post_id" =>$post->id, 
                         "blog_uuid"=>$blog_uuid, 
                         "post_date"=>$post->timestamp,
-                        "blocks" => json_encode($transformed),
-                        "self_text" => $for_db->self, 
-                        "trail_text" => $for_db->trail,
-                        "image_text" => $for_db->images,
+                        "blocksb" => json_encode($transformed),
+                        "self_media_text" => $db_post_obj->self_media_text,
+                        "trail_media_text" => $db_post_obj->trail_media_text,
+                        "trail_usernames" => $db_post_obj->trail_usernames,
                         "has_text" => $DENUM[$db_post_obj->has_text],
                         "has_link" => $DENUM[$db_post_obj->has_link],
                         "has_chat" => $DENUM[$db_post_obj->has_chat],
@@ -297,11 +337,59 @@ try {
                         "has_images" => $DENUM[$db_post_obj->has_images],
                         "has_video" => $DENUM[$db_post_obj->has_video],
                         "has_audio" => $DENUM[$db_post_obj->has_audio],
-                        "raw_tags" => $tag_rawtext, 
-                        "vec_tags" => $tag_tstext]);
+                        "tag_text" => $tag_rawtext,
+                        "index_version" => $archiver_version,
+                        "is_reblog" => $db_post_obj->is_reblog,
+                        "hit_rate" => $db_post_obj->hit_rate];
+                    try { 
+                        $db->query("SAVEPOINT insert_post");
+                        if(count($db_post_obj->self_mentions_list) + count($db_post_obj->trail_mentions_list) > 0) {
+                            $common_inserts["self_no_mentions"] = $db_post_obj->self_text_no_mentions;
+                            $common_inserts["self_with_mentions"] = $db_post_obj->self_text_augmented_mentions;
+                            $common_inserts["trail_no_mentions"] = $db_post_obj->trail_text_no_mentions;
+                            $common_inserts["trail_with_mentions"] = $db_post_obj->trail_text_augmented_mentions;
+                            $stmt_mention_insert_post->exec($common_inserts);
+                        } else {
+                            $common_inserts["self_text_regular"] = $db_post_obj->self_text_regular;
+                            $common_inserts["trail_text_regular"] = $db_post_obj->self_text_regular;
+                            $stmt_nomention_insert_post->exec($common_inserts);
+                        }
+                    } catch(Exception $e) {
+                        if($e->getCode() == "23505") {
+                            $db->query("ROLLBACK TO SAVEPOINT insert_post");
+                            $rows_updated = 0;
+                            $e2 = null;
+                            $useStatement = $update_nomention_versioned_post;
+                            if(count($db_post_obj->self_mentions_list) + count($db_post_obj->trail_mentions_list) > 0)
+                                $useStatement = $update_mention_versioned_post;
+                            try {
+                                $useStatement->exec($common_inserts);
+                            } catch(Exception $ei) {
+                                $e2 = $ei;}
+                            $rows_updated = $useStatement->rowCount();
+                            if($rows_updated > 0) {
+                                $archiving_status->indexed_this_time -=1;
+                                $db_blog_info->indexed_post_count -= 1;
+                                $archiving_status->upgraded += 1;
+                                $delete_existing_mp_links->exec(["post_id"=>$post->id]); //whipe old media_links for upgrade
+                                $isUpgrade = true;
+                                $rows_updated++;
+                                addToReanalysisQueue($blog_uuid);
+                            }
+                            
+                            if($isUpgrade == false) 
+                                throw $e;
 
-                    foreach ($db_post_obj->images as &$img) {
-                        $stmt_insert_posts_images->exec([$post->id, $img["db_id"]]);
+                        } else {
+                            throw $e;
+                        }
+                    }
+                    
+                    foreach ($db_post_obj->self_media_list as &$med) {
+                        $stmt_insert_posts_media->exec([$post->id, $med["db_id"]]);
+                    }
+                    foreach ($db_post_obj->trail_media_list as &$med) {
+                        $stmt_insert_posts_media->exec([$post->id, $med["db_id"]]);
                     }
 
                     $__arc_stat = serialize($archiving_status);
@@ -309,7 +397,7 @@ try {
                     foreach ($tags as $tag) {
                         if(check_delete($tag, $archiving_status->indexed_this_time, $blog_uuid, $db)) {
                             $archiving_status->disk_used = $disk_use;
-                            $archiving_status->content = "Deleting blog by request of post <a href='$post->post_url'>$post->id</a>, please wait...";
+                            $archiving_status->content = "Deleting blog by request of post <a href='https://".$server_blog_info->blog->name.".tumblr.com/$post->id'>$post->id</a>, please wait...";
                             queueEventToAll($searches_array, "FINISHEDINDEXING!", $archiving_status);                  
                             delete_blog($tag, $archiving_status->indexed_this_time, $blog_uuid, $db);
                             $archiving_status->content = "Blog deleted. Goodbye.";
@@ -341,6 +429,7 @@ try {
                         "success" => 'FALSE', 
                         "blog_uuid" => $blog_uuid]);
                     $db->commit();
+                    //echo ".";
                     $post_id_last_indexed = $post_id_last_attempted;
                     $post_last_indexed_info = $post_last_attempted_info;
                     $archiving_status->indexed_post_count = $db_blog_info->indexed_post_count;
@@ -350,14 +439,17 @@ try {
                     $listener_result_map = [];
 
                     $archiving_status->disk_used = $disk_use;
+                    
                     $__arc_stat = serialize($archiving_status);
                     $arc_stat = unserialize($__arc_stat);
+
                     foreach($post_searches_results as $post_result_cont) {
                         $post_result = $post_result_cont->results;
                         if($post_result != false) {
                             $post_result->tags = json_decode($post_result->tags);
                             $arc_stat->as_search_result = [$post_result];
-                        }
+                        } else {$arc_stat->as_search_result = null;}
+                        $arc_stat->isUpgrade = $isUpgrade;
                         queueEvent("INDEXEDPOST!$post_result_cont->search_id", $arc_stat);
                     }
                     
@@ -378,7 +470,13 @@ try {
             }
         } while (!empty($server_blog_info->posts));
         
-        if(empty($gap_queue)) {       
+        if(empty($gap_queue)) {
+            $max_date = time();
+            if($newest_old_version_post != null) {
+                $max_date = $newest_old_version_post->timestamp;
+            } else {
+                $newest_old_version_post = $get_newest_obsolete_post->exec(["blog_uuid"=>$blog_uuid, 'max_date'=> $max_date])->fetch(PDO::FETCH_OBJ);
+            }
             $binary_threshold = max($server_blog_info->total_posts * 0.99, max($server_blog_info->total_posts-100, $server_blog_info->total_posts*0.99));
             if($db_blog_info->indexed_post_count < $binary_threshold) {
                 $delta = -($db_blog_info->indexed_post_count - $server_blog_info->total_posts);
@@ -408,16 +506,50 @@ try {
                         $response_post_num = 0;
                         $arc_stat->notice = "Found some sneaky posts!";
                         $arc_stat->resolved = true; 
+                        $arc_stat->post_id = $post_id;
                         sendEventToAll($searches_array, "NOTICE!", $arc_stat);
                     } else {
                         //It's not very effective...
                         $arc_stat->error = "Could not find sneaky posts...this is usually due to interactions with deactivated blogs.";
                         $arc_stat->notice = $arc_stat->error;
+                        $arc_stat->post_id = $post_id;
                         $arc_stat->resolved = false;
                         $success_status = 'FALSE';
                         sendEventToAll($searches_array, "ERROR!", $arc_stat);
                     }
                 }
+            } else if($newest_old_version_post != false) { //upgrade old posts.
+                do {
+                    /**
+                     * in theory we could retrieve the post from the database, but if the user edited the post, our timestamp will be wrong
+                     * and we will miss it. So at least this way we can be sure we get everything.
+                    */
+                    $params = ['limit' => 1, 'id' => $newest_old_version_post->post_id];
+                    $tumblr_result =  call_tumblr($blog_name, 'posts', $params, true);
+                    $posts = [];
+                    $tryAnother = false;
+                    if($tumblr_result->meta->status == 200) {
+                        $posts = $tumblr_result->response->posts;
+                    }
+                    if(count($posts) > 0) {
+                        $newest_obsolete_post_info = $posts[0];
+                        $newest_obsolete_post_info->timestamp +=1;
+                        $loop_count--;
+                        array_push($gap_queue, $newest_obsolete_post_info); 
+                        
+                    } else if(property_exists($tumblr_result, "errors")) {
+                        foreach($tumblr_result->errors as $err) {
+                            if($err->title == "Not Found") {
+                                $set_post_deleted->exec(["post_id"=>$newest_old_version_post->post_id]);
+                                break;
+                            }
+                        }
+                        $max_date = $newest_old_version_post->timestamp;
+                        $newest_old_version_post = $get_newest_obsolete_post->exec(["blog_uuid"=>$blog_uuid, 'max_date'=> $max_date])->fetch(PDO::FETCH_OBJ);
+                        $tryAnother = true;
+                    }
+                } while($tryAnother);
+                              
             }
             $success_status = 'TRUE'; 
         }
@@ -438,6 +570,7 @@ try {
 } catch (Exception $e) {
     $error_string = "Error: " . $e->getMessage();
     $archiving_status->error = $error_string;
+    $arc_stat->post_id = $post_id;
     $archiving_status->notice = "A critical error occurred while indexing your blog. Posts may be missing.";
     $set_blog_success_status->exec(['FALSE', $blog_uuid]);
     sendEventToAll($searches_array, "ERROR!", (object)$archiving_status);
@@ -464,214 +597,65 @@ function queueEventToAll($searches_array, $event_str, $message) {
     }
 }
 
-//If you're going through hell, keep going.
-function transformNPF($post, $db_images) {
-    $compact = new stdClass();
-    $db_content = new stdClass();
-    $compact->self = new stdClass();
-    list($compact->self, $db_content->self) = transformItem($post, $db_images);
-    $compact->trail = [];
-    $db_content->trail = [];
-    
-    foreach($post->trail as $item) {
-        list($compact->trail[], $db_content->trail[]) = transformItem($item, $db_images);
-    }
-    $db_result = collapseDBContent($db_content);
-    return [$compact, $db_result];
-}
-
-function collapseDBContent($db_content) {
-    $result = (object)["self" => "", "trail" => "", "images" => "", "blogs_involved" => ""];
-    $blogs_involved = []; //extracts out blog names on a best effort basis so as to store them in their own dedicated columns 
-    foreach($db_content->self->blocks as $block) {
-        toCollapsed($block, $result->self, $result->images);
-    }
-    foreach($db_content->trail as $item) {
-        $result->trail .= $item->by != null ? "$item->by\n" : "\n";
-        foreach($item->blocks as $block) {
-            toCollapsed($block, $result->trail, $result->images);
-        }
-    }
-    return $result;
-}
-
-function toCollapsed($db_block, &$into, &$images) {
-    if($db_block["type"] == "text")
-        $into .= $db_block["val"];
-    else if($db_block["type"] == "image")
-        $images .= $db_block["val"];
-}
-
-//oh god. oh god. oh god.
-function transformItem($post, $db_images) {
-    global $blog_uuid;
-    $subtype_map = [
-        "heading1" => "h1",
-        "heading2" => "h2", #Intended for section subheadings.
-        "quirky" => "quirky", #Tumblr Official clients display this with a large cursive font.
-        "quote" => "q", #Intended for short quotations, official Tumblr clients display this with a large serif font.
-        "indented" => "ind", #Intended for longer quotations or photo captions, official Tumblr clients indent this text block.
-        "chat" => "chat", #Intended to mimic the behavior of the Chat Post type, official Tumblr clients display this with a monospace font.
-        "ordered-list-item" => "ol", #Intended to be an ordered list item prefixed by a number, see next section.
-        "unordered-list-item" => "ul" #Intended to be an unordered list item prefixed with a bullet, see next section.
-    ];
-    $respost = new stdClass();
-    $respost->content = [];
-    $respost->by = $post->blog->name ?? "tumblr user";
-    
-    $db_content = new stdClass();
-    if($post->blog->uuid != $blog_uuid)
-        $db_content->by = $post->blog->name ?? "tumblr user";
-    $db_content->blocks = [];
-    $typeCount = [];
-    // Handle the main content
-    foreach ($post->content as $block) {
-        $item = new stdClass();
-        switch ($block->type) {
-            case 'text':
-                $item->t = 'txt';
-                $item->c = $block->text;
-                if (isset($block->subtype)) {
-                    $item->s = $subtype_map[$block->subtype];
-                }
-                if (isset($block->formatting)) {
-                    //augment_text($item->c);
-                }
-                break;
-            case 'image':
-                $image_id = null;
-                foreach($db_images as $db_img) {
-                    if($db_img["url"] == $block->media[0]->url)
-                        $item->db_id = $db_img["db_id"];
-                }
-                $item->t = 'img';
-                //$item->u = $block->media[0]->url;
-                $item->w = $block->media[0]->width;
-                $item->h = $block->media[0]->height;
-                $item->alt = $block->alt_text;
-                $item->caption = $block->caption;
-                break;
-            case 'link':
-                $item->t = 'lnk';
-                $item->u = $block->url;
-                if (isset($block->description)) {
-                    $item->d = $block->description;
-                }
-                if (isset($block->title)) {
-                    $item->ttl = $block->title;
-                }
-                break;
-            case 'audio':
-                $item->t = 'aud';
-                $item->u = $block->media->url;
-                if (isset($block->title)) {
-                    $item->ttl = $block->description;
-                }
-                if (isset($block->artist)) {
-                    $item->artist = $block->artist;
-                }
-                if (isset($block->album)) {
-                    $item->album = $block->album;
-                }
-                break;
-            case 'video':
-                $item->t = 'vid';
-                $item->u = $block->media->url;
-                $item->w = $block->media->width;
-                $item->h = $block->media->height;
-                break;
-        }
-        $respost->content[] = $item;
-        $db_content->blocks = array_merge($db_content->blocks, get_db_type_for_block($block));
-    }
-    $respost->layout = $post->layout;
-
-    return [$respost, $db_content];
-}
-
 /**
- * updates the text contents of &$block in place to replace all detected username mentions with an xmltag representation
- * of the username. This will atempt find usernames in the old style where people would copy and paste cnote text,
- * as well as the new style where mentions are directly formatted via mentions this is so that the mention can 
- */
-function augment_text(&$block) {
-
-
-}
-
-/**
- * looks at the formatting entry of any text if it exists, then splits the textblock into
- * an array of seperate strings, such that the 0-inddexed odd numbered elements contain text sequences corresponding to a user mention, and the even ones contain text
- * not corresponding to a user mention. An emty string is inserted at the beginning or end of the sequence to ensure this rule holds in the event that the first or last segment corresponds to a user mention
+ * Takes a post in NPF format, extracts and recomposes its content for databases entry.
+ * Multiple decompositions and transformations occur, and multiple are returned.
+ * @return array of the form [
+ *     [0] : A standard object containing post information intended for displaying to the user. This comprises a "self" post object made by the user, and a trail array of the post's reblog history. 
+ *      Each post object includes 
+ *          - various meta information like:
+ *              - the name of the blog which made the post,
+ *              - the date of the post, 
+ *              - the tumblr link to the post, 
+ *              - etc
+ *          - an array of the blocks in the post, arranged by appearance 
+ *              - with any image urls referenced by image_id
+ *              - any text formatting inlined into the text content
  * 
- * @param npfBlock should be a raw tumblr npfblock of type text with a formatting entry.
-*/
-function extractMentionSubtext($npfBlock) {
-    $result_array = [];
-    $mentionedUsers = [];
-    $text = $input['text'];
-    
-    // Iterate over the formatting to find mentions and replace them with whitespace
-    foreach ($input['formatting'] as $format) {
-        if ($format['type'] === 'mention') {
-            $username = $format['blog']['name'];
-            $mentionedUsers[] = $username;
+ *      [1] : A standard object containing a prepprocessed textual representation of the post approriate for database input.
+ *          This part is a bit tricky so you'll need to pay attention to understand it.
+ *              1. We want to specifically mark any username / mention text in a post as being such. I use the term "we" here loosely, to mean "mostly just me for now". Specifically, if we can't distinguish between people referencing a user and people using a word, then we pollute downstream analysis for other fun stuff like wordclouds . But it's also hypothetically useful for future features (like, if you want to search for interactions you've had with a user who changes their blog name a lot).
+ *              2. So let's say we have a post mentioning @antinegationism and @siikr.
+ *                  "Salutations, @antinegationism. I extend my sincerest gratitutde for your impeccable work on @siikr, the tumblr search engine which really exists."  
+ *              We want this to lexemetize to
+ *               'salutation:1A,  antinegationism:2B,  extend:4A,  sincere:6A,  gratitutde:7A,  impeccable:10A,  work:11A,  siikr:13B,  tumblr:15A,  search:16A,  engine:17A,  real:19A, exist:20A'
+ *              Notice how most words get a weight of A, while mentioned users get a weight of B. This all while each lexeme retains its position information in the original text. This allows us to continue using phrase matching in search if someone wants for example the exact phrase "Salutations antinegationism I extend", while still allowing us to filter out usernames on statistical queries or fancier downstream features.
+ *              3. Unfortunately, postgresql doesn't let us set lexeme weights inline. So this means we'd have to split the string up on every detected username mention just to seperately set its weight to something we can selectively filter or replace. This defeats the purpose of using prepared statements, since we'd be rebuilting the query from scratch each time. Aside from being slow, this would be extremely error prone depending on the stopwords our split happens to occur on.
+ *              - If you think there's a bunch of trivial ways to overcome this -- you're wrong and postgres doesn't support any of those things you are thinking. 
+ *              4. Instead, we take advantage of a few quirks and poorly documented behavior tsvector concatenation.
+ *                 - First, stop words reserve their position when lexemetized, despite not appearing.
+ *                 - Second, a stop word from a specific dictionary inhibits application in a later dictionary (so, english "the" gets turned into a stopword, and thereby never appears in simple dictionary's "the")
+ *                 - Third (this one is actually an obstacle), the only way to combine tsvectors is to concatenate them, which offsets the positions of the second vector to account for the positions of the first vector.
+ *                 - Fourth, a tsvector can be cast to a string and vice versa, and the tsvector will retain its information
+ *                 - Fifth, in order to ensure a tsvector is valid, some deduplication, merging and prioritizing occurs. 
+ *                      - This means tokens which are identical in both strings by both lexeme and position get merged into a single token.
+ *                      - Strangely, though tsvector supports two different lexemes of the same weight in the same position, and two different lexemes of different weights in the same position, and the same lexeme in multiple positions with different or the same weights; it does not support the same lexeme in the same position with multiple weights.
+ *                      - antinegationism:22A,23B is valid, but antinegationism:22A,22B is not.
+ *                      - upon resolution, whichever appearance has the highest weight precedence (A) gets priority.
+ *              5. So in theory, to get the result we want, we can just make two versions of our string. A version weighted 'A' with any user mentions replaced by a stop word (to retain position of all other words), and a version weighted 'B', which contians the actual mentioned usernames. 
+ *          Then just turn each into a tsvector, 
+ *          cast them both to strings, 
+ *          concatenate the strings,
+ *          and parse the strings as tsvectors, knowing that the A weights will take precedence where words exist, and the B weight words will only appear in the positions where they take priority over stop words (which don't exist in the vector at all).
+ * 
+ *      HOWEVER IN PRACTICE . . .  tumblr user names can have hyphens, underscores, and numbers. And postgres parses these as distinct lexeme types, be they word hyphenations, equation parts, numwords . . . basically anticipatin all of the things that can happen in advance amounts to rewriting the parser. And we definitely DON'T want to ts_vectorize every single username mention just to determine the number of stop words to replace with it.
+ * 
+ *     DOUBLY HOWEVER, the parser does NOT do this if something looks like an email. 
+ *     Emails are very carefully preserved as such. And as it so happens, the valid characters for an email addres are a superset of the valid characters for a tumblr username. So we can always just use a single stopword per username in the placeholder string, and just add @siikr.tumblr.com to the username containing string. Then strip out what we injected from the string cast from the tsvector created from the email augmented username containing string. Easy!
+ * Which means the full procedure looks like:
+ *          - Create version S_a of the string where every username or mention is replaced with a stopword.
+ *          - Create version S_b of the string, where every username or mention has '@siikr.tumblr.com' appended to it.
+ *          - Create a tsvector by 
+ *              -- (setWeight(to_tsvector('en_us_hun_simple', S_a), 'A')::TEXT || ' ' || 
+ *                  (SELECT replace(setWeight(to_tsvector('en_us_hun_simple', S_b, 'B')::TEXT), '@siikr.tumblr.com', ''))::tsvector 
+ *      
+ *      All of this is to say, that this entry contains two strings. 
+ *      S_a, and S_b. Both are necessary, you should use them, and furthermore if you are modifying siikr to better support a non-english language, you should make sure to replace the stopword with something that is a stopword in whatever dictionary your language uses 
+ * ]
+ **/
 
-            $start = $format['start'];
-            $end = $format['end'];
-            if($start == 0) $resultArray[] = '';
-            if($end == strlen($input->text))
-
-            // Replace the mentioned username with whitespace
-            $length = $end - $start;
-            $whitespace = str_repeat(' ', $length);
-            $text = substr_replace($text, $whitespace, $start, $length);
-        }
-    }
-
-    return [
-        'mentionedUsers' => $mentionedUsers,
-        'processedText' => $text
-    ];
-}
 
 
-/**merges the text content of blocks of the given indices into the text content of a single block. */
-function asMerged(&$blocks, $indices_arr = null) {
-    if($indices_arr == null) return;
-    $newBlock = $blocks[$indices_arr[0]];
-    $isFirst = true;
-    foreach($indices_arr as $block_index) {
-        if(!$isFirst)
-            $newBlock->text .= $blocks[$block_index]->text;
-        $isFirst = false;
-        $blocks[$block_index] = null;
-    }
-    return $newBlock;
-}
-
-function get_db_type_for_block($block) {
-    if($block->type == "text") {
-        $result = ["type"=> "text", "val" => $block->text."\n"]; 
-        return [$result];
-    }
-    $propety_map = [
-        "title" => "text",
-        "description" => "text",
-        "alt_text" => "image",
-        "caption" => "image"
-    ];
-    $results = [];
-    foreach($propety_map as $k => $v) {
-        if($block->{$k} != null) {
-            if($k == "alt_text" && $block->{$k} == "image") 
-                continue; //wow that's annoying. sometime images are just alt_texted with "image"
-            $results[] = ["type" => $v, "val" => $block->{$k}."\n"];
-        }
-    }
-
-    return $results;
-}
 
 
 ?>

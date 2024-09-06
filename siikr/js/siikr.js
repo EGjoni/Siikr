@@ -2,12 +2,20 @@ var href = document.location.href;
 var currentResultsById = {};
 var currentResults = [];
 window.stateHistory = {};
-subdir = ""; //for coding on prodoction
-alwaysPrepend = ""; //this too cuz YOLO
 blogInfo = null;
 var blog_uuid = null;
 
 var sortMode = null;
+var pseudoSocket = null;//new PseudoSocket(server_events_override_url);
+
+function reinitPseudoSocket(newUrl) {
+	if(pseudoSocket?.isConnected) {
+		pseudoSocket.disconnect();
+	}
+	pseudoSocket = new PseudoSocket(newUrl);
+}
+
+
 document.addEventListener("DOMContentLoaded", () => {
 	window.addEventListener('message', function(event) {
 		if (event.origin !== 'https://embed.tumblr.com') return; 
@@ -41,10 +49,8 @@ document.addEventListener("DOMContentLoaded", () => {
 			}
 		}
 	});
-	selectedTagContainer = document.getElementById("selected-tags"); 
-	progressContainer = document.getElementById("progress-container");
-	noticeContainer = document.getElementById("notice-container");
-	noticeLog = noticeContainer.querySelector("#notice-log");
+	selectedTagContainer = document.getElementById("selected-tags");	
+	
 	statusBar = document.getElementById("progress");
 	statusText = document.getElementById("status-text"); 
 	statusText.addEventListener("transitionend", setPendingStatusText);
@@ -64,8 +70,13 @@ document.addEventListener("DOMContentLoaded", () => {
 	rowTemplate = templates.querySelector(".row");
 	askTemplate = templates.querySelector(".ask-box");
 
+	progressContainer = document.getElementById("progress-container");
+	noticeContainer = document.getElementById("notice-container");
+	noticeLog = noticeContainer.querySelector("#notice-log");
+
 	progressListener = getOrAddServerListenerFor(progressContainer);
 	noticeListener = getOrAddServerListenerFor(noticeContainer);
+
 	sortBy= document.getElementById("sort-by");
 
 	splitURL();
@@ -165,7 +176,7 @@ async function seek(doAugmentFlip = true, updateURL = true, isInsuranceCheck=fal
         sortMode = sortBy.value;
 
 	lastArchivedStatus = 0;
-	previousResultCount = currentResults.length;
+	previousResultCount = Math.max(currentResults.length, 15);
 	lastTotalStatus = "[computing]";
 	//progressBar.classList.remove("progress-trans");
 	progressBar.style.width = "0px"
@@ -204,10 +215,8 @@ async function processSeekResult(blogInfoIn, doAugmentFlip) {
 	if(blogInfoIn.valid) {
 		blogInfo = blogInfoIn;
 		blog_uuid = blogInfo.blog_uuid;
-		var tagres = fetch("get_tags.php?blog_uuid="+blog_uuid);
+		var tagres = fetch(subdir+"get_tags.php?blog_uuid="+blog_uuid);
 		
-		//setTags(tagres);
-		//associatePostTags(blogInfo.results);
 		pending_attachment_count = 0;
 		updatePendingCountHint();
 		if(blogInfo.indexed_post_count == 0 || blogInfo.indexed_post_count == null) {
@@ -219,9 +228,11 @@ async function processSeekResult(blogInfoIn, doAugmentFlip) {
 			} else {
 				fadeStatusTextTo(blogInfo.results.length +` posts found! (From `+blogInfo.indexed_post_count+` posts searched)`);
 			}
-			await augmentSearchResults(blogInfo.results, doAugmentFlip, getCurrentlySelectedTags());
+			pendingTags = asyncTagFetch(tagres, blogInfo.results);
+			waitForTags = asyncSetTags();
+			await augmentSearchResults(blogInfo.results, doAugmentFlip, waitForTags);
 			updateHistoryState(currentStateToUrl(selectedTags), blogInfo?.search_id);
-			asyncTagUpdate(tagres, blogInfo.results);
+			
 		}
 	} else {
 		fadeStatusTextTo(blogInfo.display_error);
@@ -229,7 +240,8 @@ async function processSeekResult(blogInfoIn, doAugmentFlip) {
 }
 pending_attachment_count = 0;
 async function processMoreResults(obj) {
-	await augmentSearchResults(obj.more_results, false);
+	
+	await augmentSearchResults(obj.more_results, false, pendingTags);
 	let progressString = '';
 	if(obj.has_more) {
 		progressString = 'More than '+ currentResults.length +` posts found! (From `+obj.indexed_post_count+` posts searched)`;
@@ -252,27 +264,46 @@ async function resetProgressListeners(obj) {
 	progressListener.removeListener("indextagupdate");
 	noticeListener.removeListener("noticelistener");
 	noticeListener.removeListener("errorlistener");
+	reinitPseudoSocket('https://'+obj.server+"/routing/serverEvents.php");		
 	
 	progressListener.setListener("indexbegin",
-		"INDEXNG!"+search_id, {},
+		"INDEXNG!"+search_id, {
+			'queryFunction' : 'findBestKnownNode',
+			'params' : {"search_id" : search_id, "blog_uuid" : obj.blog_uuid}
+		},
 		()=>{
 			console.log("ARCHIVER STARTED");
 		}
 	);
 	progressListener.setListener("indexconclude",
-		"FINISHEDINDEXING!"+search_id, {},
+		"FINISHEDINDEXING!"+search_id,{
+			'queryFunction' : 'findBestKnownNode',
+			'params' : {"search_id" : search_id, "blog_uuid" : obj.blog_uuid}
+		},
 		concludeIndexState
 	);
 	progressListener.setListener("indexpostupdate", 
-		"INDEXEDPOST!"+search_id, {},
+		"INDEXEDPOST!"+search_id, {
+			'queryFunction' : 'findBestKnownNode',
+			'params' : {"search_id" : search_id, "blog_uuid" : obj.blog_uuid}
+		},
 		updateIndexState
 	);
 	progressListener.setListener("indextagupdate", 
-		"INDEXEDTAG!"+search_id, {},
+		"INDEXEDTAG!"+search_id, {
+			'queryFunction' : 'findBestKnownNode',
+			'params' : {"search_id" : search_id, "blog_uuid" : obj.blog_uuid}
+		},
 		updateAvailableTags
 	);
-	noticeListener.setListener("noticelistener", "NOTICE!"+search_id, {}, updateNoticeText);
-	noticeListener.setListener("errorlistener", "ERROR!"+search_id, {}, updateErrorText);
+	noticeListener.setListener("noticelistener", "NOTICE!"+search_id, {
+		'queryFunction' : 'findBestKnownNode',
+		'params' : {"search_id" : search_id, "blog_uuid" : obj.blog_uuid}
+	}, updateNoticeText);
+	noticeListener.setListener("errorlistener", "ERROR!"+search_id, {
+		'queryFunction' : 'findBestKnownNode',
+		'params' : {"search_id" : search_id, "blog_uuid" : obj.blog_uuid}
+	}, updateErrorText);
 }
 
 /**maintains a leader stream fetcher object. leader gets replaced by any new calls to the s_fetch(), and an old streaming fetchers halt their progress if the aren't the leader. 
@@ -297,7 +328,7 @@ class SFetch {
 	    while (true) {
 	        const { done, value } = await reader.read();
 	        if(SFetch.activeFetcher != this) {
-				console.log('STREAM TERMINATED');
+				//console.log('STREAM TERMINATED');
 				break;
 			}
 	
@@ -323,7 +354,7 @@ class SFetch {
 								//debug_res.push(...obj.results);
 								await on_initial_results(obj);
 							}
-							else if(obj.search_id !=null && obj.blog_uuid == null) 
+							else if(obj.search_id !=null && obj.is_init == true) 
 								await on_search_id(obj);
 							else if (obj.more_results != null && obj.more_results.length > 0) {
 								//console.log("+ "+obj.more_results.length + ",    last_id = "+obj.more_results[obj.more_results.length-1].post_id);
@@ -356,11 +387,16 @@ async function s_fetch(endpoint, on_search_id, on_initial_results, on_more_resul
 }
 
 
-async function asyncTagUpdate(tagFetch, posts) {
+async function asyncTagFetch(tagFetch) {
 	var tres = await tagFetch;
 	var tblog_info = await tres.json();
-	setTags(tblog_info.tag_list);
-	associatePostTags(posts, getCurrentlySelectedTags());
+	return tblog_info;
+	//associatePostTags(posts, getCurrentlySelectedTags());
+}
+
+async function asyncSetTags() {
+	let ptags = await pendingTags;
+	setTags(ptags.tag_list);
 }
 
 async function associatePostTags(posts) {
@@ -376,7 +412,7 @@ async function associatePostTags(posts) {
 function keyifyTagObj(post) {
 	
 	if(typeof post?.tags == "string") {
-		post.tag_ids = typeof JSON.parse(post.tags);
+		post.tag_ids = JSON.parse(post.tags);
 		post.tags = {};
 	} else {
 		if(Array.isArray(post.tags)) {
@@ -394,9 +430,11 @@ function keyifyTagObj(post) {
 }
 
 async function __reSort(sortMode, updateURL=true, doSeek = true, isInsuranceCheck=false) {
-	var elems = []; 
-	var addedElems = [];
-	var removedElems = [];
+	var elems = new Set(); 
+	var addedElems = new Set();
+	var removedElems = new Set();
+	var existingElemsArr =  [...resultContainer.children];
+	var existingElems = new Set(existingElemsArr);
 	if(doSeek) 
 		await seek(false, updateURL, isInsuranceCheck);
 	else if(updateURL) {
@@ -407,17 +445,40 @@ async function __reSort(sortMode, updateURL=true, doSeek = true, isInsuranceChec
 		updateHistoryState(currentStateToUrl(selectedTags), blogInfo?.search_id);
 	}
 	histSort(currentResults, sortBy.value);
-	for(var i=0; i<resultContainer.children.length; i++) {
-		elems.push(currentResults[i].element);
-		addedElems.push(currentResults[i].element);
+	let max = Math.max(resultContainer.children.length, 15);
+	let startElemCount = resultContainer.children.length;
+
+	let i=0;
+	while(i<Math.min(startElemCount, max)) {
+		elems.add(currentResults[i].element);
+		//if(!existingElems.has(currentResults[i].element)) {
+			addedElems.add(currentResults[i].element);		
+			if(addedElems.size + existingElemsArr.length >= max) {
+				let remelem = existingElemsArr.pop();
+				if(remelem != null) {
+					elems.add(remelem);
+					removedElems.add(remelem);
+				}
+			}
+		//}
+		if(addedElems.size >= max) break;
+		i++;
 	}
-	for(var i=0; i<resultContainer.children.length; i++) {
+	pending_attachment_count = currentResults.length - (addedElems.size + existingElemsArr.length);
+	/*while(i<resultContainer.children.length) {
 		//if(addedElems[resultContainer.children[i].result.post_id] == null)
-		elems.push(resultContainer.children[i]);
-		removedElems.push(resultContainer.children[i]);
-	}
+		elems.add(resultContainer.children[i]);
+		if(i>max) {
+			pending_attachment_count++;
+			removedElems.add(resultContainer.children[i]);
+		}
+		i++;
+	}*/
+	updatePendingCountHint(false);
+	addedElems = [...addedElems]; 
+	removedElems = [...removedElems];
 	var selectedTags = getCurrentlySelectedTags();
-	await flip(elems, 
+	await flip([...elems], 
 		()=>{
 			for(var i=0; i<removedElems.length; i++) { 
 				removedElems[i].remove();
@@ -507,6 +568,7 @@ function updateErrorText(serverEvent) {
 function updateAvailableTags(serverEvent) {
 	var eventMessage = serverEvent.eventMessage;
 	addTag(eventMessage.newTag.tag_id, eventMessage.newTag.tagtext, eventMessage.newTag.user_usecount, true);
+	associatePostTags(currentResults)
 	//console.log("new tag found: " + eventMessage.newTag.tagtext);
 }
 
@@ -526,7 +588,8 @@ function updateIndexState(serverEvent) {
 		statusText.innerHTML = progressString;
 	}
 	if(eventMessage.as_search_result != null && eventMessage.as_search_result.length > 0) {
-		augmentSearchResults(eventMessage.as_search_result, false);
+		let resolved = async function(){};
+		augmentSearchResults(eventMessage.as_search_result, false, resolved());
 		reSort(sortBy, false, false);
 	}
 	progressText.innerHTML = progressString; 
@@ -543,7 +606,30 @@ async function concludeIndexState(serverEvent) {
 	}
 	updateDiskUseBar(eventMessage.disk_used);
 	if(eventMessage.deleted) clearSearchResults();
+	pseudoSocket.disconnect();
 	//console.log("indexing finished!");
+}
+
+function fadeStatusTextTo(text) {
+	statusText.pendingText = text;
+	statusText.classList.add("fadeout");
+}
+
+ /**
+     * updates the status text after the fadeout animation has ended,
+     * then sets the fadein animation
+     */
+ function setPendingStatusText() {
+	if(statusText.classList.contains("fadeout")) {
+		statusText.innerHTML = statusText.pendingText;
+	}
+	statusText.classList.remove("fadeout");
+}
+
+
+
+function collapseExpandableParent(elem) {
+	elem.closest("details").querySelector("summary").click();
 }
 
 
@@ -570,9 +656,15 @@ function collapseExpandableParent(elem) {
 /**
  * adds the results in the resultList to the existing results
  */
-async function augmentSearchResults(resultList, doAugmentFlip = true, currentlySelectedTags = getCurrentlySelectedTags()) {
+async function augmentSearchResults(resultList, doAugmentFlip = true, tagAwaiter) {
+	
 	var toReSort = []; //contains only new results;
 	var toReplace = []; //contains only new results;  
+	let asyncConstraint = async function(resultElem, waitForTags) {
+		let tagsDone = await waitForTags;
+		let currentlySelectedTags = getCurrentlySelectedTags();
+		updateConstraints(resultElem, currentlySelectedTags);
+	}
 	for(var i=0; i<resultList.length; i++) {
 		var result = resultList[i]; 
 		if(typeof result.media == "string") {
@@ -587,14 +679,18 @@ async function augmentSearchResults(resultList, doAugmentFlip = true, currentlyS
 			result.element = resultElement;
 			keyifyTagObj(result);
 			hydrateResultElement(result, resultElement); 
-			hydratePostTags(result.element);
-			updateConstraints(resultElement, currentlySelectedTags);
+			hydratePostTags(result.element, tagAwaiter);
+			asyncConstraint(resultElement, tagAwaiter);
 			currentResults.push(result);
 			toReSort.push(result); 
 		} else if (currentResultsById[result.post_id].score != resultList[i].score) {
 			currentResultsById[result.post_id].score = resultList[i].score;
-			hydrateResultElement(result, resultElement); 
-			hydratePostTags(result.element);
+			var resultElement = currentResultsById[result.post_id].element; 
+			if(resultElement == null) resultElement = templateResult.cloneNode(true);
+			keyifyTagObj(result);
+			hydrateResultElement(result, resultElement);
+			hydratePostTags(resultElement, tagAwaiter);
+			asyncConstraint(resultElement, tagAwaiter);
 			toReplace.push(currentResultsById[result.post_id]);
 		}
 	}
@@ -724,7 +820,7 @@ function hydrateResultElement(data, element) {
 
 		trailContainerElem.appendChild(hydrateSubpost(trailItem, data.media_by_id));
 	});
-	selfContainerElem.appendChild(hydrateSubpost(post.self, data.media_by_id));
+	selfContainerElem.appendChild(hydrateSubpost(post?.self, data.media_by_id));
 
 	//var username_url = data.post_url.split("://")[1].split("tumblr.com"); //annoying hack but have to handle potentially changed blog names.
 	//if(username_url.length != 0 && username_url !== "tumblr.com") {
@@ -891,7 +987,7 @@ function makeFormattedBlock(npfbloc_hard, blocknum_start, media_by_id){
 			if(b.t != 'txt') break;
 			let bstringArr = [];
 			if(b.t == 'txt') {
-				if(b.c=="") bstringArr.push( {pre: [], inner: c, post: []});
+				if(b.c=="") bstringArr.push( {pre: [], inner: "", post: []});
 				for(c of b.c) 
 					bstringArr.push( {pre: [], inner: c, post: []});
 				
@@ -918,16 +1014,18 @@ function makeFormattedBlock(npfbloc_hard, blocknum_start, media_by_id){
 	return {elem : blocksCont, block_num_end: blocknum};
 }
 
-function make(imgBlock) {
 
-}
 
 function hydrateSubpost(contentContainer, mediaItems) {
 	var implicit = {};
-	var contentItems = contentContainer.content;
-	var layout = contentContainer.layout;
+	var contentItems = contentContainer?.content;
+	var layout = contentContainer?.layout;
 	var subpost = subpostTemplate.cloneNode(true);
 	var subpostContent = subpost.querySelector(".post-content");
+	if(contentContainer == undefined) {
+		subpostContent.innerHTML = "<h2>Something Went Wrong With This Post</h2>";
+		return subpost;
+	}
 	var subpostHeader =  subpost.querySelector(".user-header");
 	var blogIcon =  subpostHeader.querySelector(".blog-icon");
 	var blogName =  subpostHeader.querySelector(".blog-name");
@@ -949,13 +1047,20 @@ function hydrateSubpost(contentContainer, mediaItems) {
 				tagtype = "img";
 				newnode = document.querySelector("#templates .img-container").cloneNode(true);
 				let media_item = mediaItems[content.db_id];
-				newnode.querySelector(".img-caption").innerText = media_item.title;
-				//newnode.querySelector("img").setAttribute("data-image-id", content.db_id);
-				let img = newnode.querySelector("img");
-				img.setAttribute("alt", media_item.description);				
-				img.setAttribute("src", 'https://'+(media_item.preview_url != null ? media_item.preview_url : media_item.media_url));
-				img.setAttribute("data-image-id",  'https://'+media_item.media_url);
+				if(media_item != null) {
+					newnode.querySelector(".img-caption").innerText = media_item.title;
+					//newnode.querySelector("img").setAttribute("data-image-id", content.db_id);
+					let img = newnode.querySelector("img");
+					img.setAttribute("alt", media_item.description);				
+					img.setAttribute("src", 'https://'+(media_item.preview_url != null ? media_item.preview_url : media_item.media_url));
+					img.setAttribute("data-image-id",  'https://'+media_item.media_url);
+				} else {
+					newnode.innerText = "MEDIA ITEM UNAVAILABLE. Your blog's index might be in the middle of an upgrade. Should come through eventually,";
+					newnode.style.color = 'red';
+				}
+
 				newnode.setAttribute("data-block-num", blocknum);
+				
 				content.elem = newnode; 
 				break;
 			case "txt": 
@@ -970,34 +1075,40 @@ function hydrateSubpost(contentContainer, mediaItems) {
 				};
 				newnode = document.createElement(tagtype);
 				newnode.innerText = content.c;
-				if(subdir !="") {
+				//if(subdir !="") {
 					let result = makeFormattedBlock(contentItems, blocknum, mediaItems);
 					newnode = result.elem;
 					blocknum = result.block_num_end-1;
-				} else
-					newnode.classList.add(...tagclasses);
+				/*} else
+					newnode.classList.add(...tagclasses);*/
 				break;
 			case "vid":
 			case "lnk": 
 				newnode =  document.querySelector("#templates .link-container").cloneNode(true);
-				if(subdir !="" && content?.db_id != null) {
+				//if(subdir !="" && content?.db_id != null) {
 					media = mediaItems[content.db_id];
-					newnode.querySelector("a").setAttribute("href", 'https://'+media.media_url);
-					newnode.querySelector("a h2").innerText = media.title;
-					if(media.description != null) {
-						newnode.querySelector("a span").innerText = media.description;
+					if(media != null) {
+						newnode.querySelector("a").setAttribute("href", 'https://'+media.media_url);
+						newnode.querySelector("a h2").innerText = media.title;
+						if(media.description != null) {
+							newnode.querySelector("a span").innerText = media.description;
+						}
+					
+						if(media.preview_url != null) {
+							let imgelem = document.createElement("img");
+							imgelem.setAttribute("loading", "lazy"); 
+							imgelem.setAttribute("src", 'https://'+media.preview_url);
+							newnode.querySelector("a span").appendChild(imgelem);
+						}
+					} else {
+						newnode.innerText = "LINK INFO UNAVAILABLE. Your blog's index might be in the middle of an upgrade. Should come through eventually,";
+						newnode.style.color = 'red';
 					}
-					if(media.preview_url != null) {
-						let imgelem = document.createElement("img");
-						imgelem.setAttribute("loading", "lazy"); 
-						imgelem.setAttribute("src", 'https://'+media.preview_url);
-						newnode.querySelector("a span").appendChild(imgelem);
-					}
-				} else {
+				/*} else {
 					newnode.querySelector("a").setAttribute("href", content.u);
 					newnode.querySelector("a h2").innerText = content.ttl;
 					newnode.querySelector("a span").innerText = content.d;
-				}
+				}*/
 				newnode.setAttribute("data-block-num", blocknum); 
 				content.elem = newnode;
 				break;
@@ -1078,13 +1189,15 @@ function hydrateSubpost(contentContainer, mediaItems) {
 			askElem = askTemplate.cloneNode(true);
 			var name = askElem.querySelector(".name-container");
 			var icon = askElem.querySelector(".blog-icon");
-			if(layoutInst?.attribution?.blog?.url != null) 
-				name.setAttribute("href", layoutInst?.attribution?.blog?.url);
-			if(layoutInst?.attribution?.blog?.avatar?.leghth > null) {
-				icon.setAttribute("src", layoutInst?.attribution?.blog?.avatar[3].url);
+			var asktextcontainer = askElem.querySelector(".ask-text-container");
+			let blogAttr =layoutInst?.attribution?.blog;
+			if(blogAttr?.url != null) 
+				name.setAttribute("href", blogAttr?.url);
+			if(blogAttr?.avatar != null) {
+				icon.setAttribute("src", blogAttr?.avatar[Math.min(blogAttr.avatar.length-1, 3)].url);
 			}
-			name.innerText = layoutInst?.attribution?.blog?.name ?? "Anonymous";
-			var askContent = askElem.querySelector(".ask-content");
+			name.innerText = blogAttr?.name ?? "Anonymous";
+			var askContent = asktextcontainer;
 			rowblocks(layoutInst, askContent);
 			subpostContent.insertBefore(askElem, subpostContent.firstChild);
 		} else if(layoutInst.type == "rows") {
@@ -1108,17 +1221,27 @@ async function loadActualImage(imgElement) {
 	}
 }
 
-function hydratePostTags(postElem) {
+
+let pending = [];
+let finished = [];
+
+async function hydratePostTags(postElem, tagAwaiter) {
 	var data = postElem.result;
+	pending.push(tagAwaiter);
+	let gotTags = await tagAwaiter;
 	var tagList = postElem.querySelector(".result-tags");
+	//if(Object.keys(data.tags).length == 0) console.log("skipping " + postElem.result.post_id + " due to 0 tags");
+	//else console.log("augmenting " + postElem.result.post_id+" : with " + Object.keys(data.tags).length + " tags ");
 	for(var k of Object.keys(data.tags)) {
-		if(data.tags[k] != undefined) {
+		if(data.tags[k] == undefined && blogTags[k] != undefined) {
+			data.tags[k] = blogTags[k];
 			var taglink = document.createElement("a");
 			taglink.classList.add("taglink");
 			taglink.innerText = "#"+(typeof data.tags[k] == "string"? data.tags[k] : data.tags[k].full);
 			tagList.appendChild(taglink); 
 		}
 	}
+	finished.push(pending.pop()); 
 }
 
 blogTags = {}; 
@@ -1350,7 +1473,7 @@ function updateHistoryState(urlPath = null, updates_search_id = null) {
 
 async function restoreResultsFromState(state) {
 	if(state?.blog_uuid != null && state?.display && Object.keys(state?.display)?.length > 0) {
-		let initialResults = fetch('repop.php', 
+		let initialResults = fetch(subdir+'repop.php', 
 			{
     			method: 'POST', headers: {'Content-Type': 'application/json'},
     			body: JSON.stringify({
@@ -1361,7 +1484,7 @@ async function restoreResultsFromState(state) {
 		);
 		let moreResults = async ()=>{{}};
 		if(Object.keys(state?.pending)?.length > 0) {
-			moreResults = fetch('repop.php',
+			moreResults = fetch(subdir+'repop.php',
 				{
 						method: 'POST', headers: {'Content-Type': 'application/json'},
 						body: JSON.stringify({
@@ -1385,24 +1508,24 @@ async function restoreResultsFromState(state) {
 }
 
 //updates statustext without fading
-function setStatusTextTo(text) {
+/*function setStatusTextTo(text) {
 	
 }
 function fadeStatusTextTo(text) {
 	statusText.pendingText = text;
 	statusText.classList.add("fadeout");
-}
+}*/
 
 /**
  * updates the status text after the fadeout animation has ended,
  * then sets the fadein animation
  */
-function setPendingStatusText() {
+/*function setPendingStatusText() {
 	if(statusText.classList.contains("fadeout")) {
 		statusText.innerHTML = statusText.pendingText;
 	}
 	statusText.classList.remove("fadeout");
-}
+}*/
 
 
 function toggleThisPreview(elem) {
@@ -1477,34 +1600,7 @@ function addToHydrationQueue(elem) {
 		iframe.setAttribute("loading", "lazy");
 		elem.appendChild(iframe);
 
-		/*
-		observer = new MutationObserver((mutationsList, observer) => {
-			for(const mutation of mutationsList) {
-				if (mutation.type === 'childList') { 
-					for(const added of mutation.addedNodes) {
-						if(added.tagName == "IFRAME") {
-							previewLoadedObserver.observe(added, {attributes: true, childList: true, subtree: true});
-							//break;
-						}
-					}
-				}
-			}
-		});
-		var previewLoadedObserver = new MutationObserver((mutationsList, observer) => {
-			for(const mutation of mutationsList) {
-				if(mutation.type == "attributes") {
-					var width = mutation.target.getAttribute("width");
-					var height = mutation.target.getAttribute("height");
-					if((width != null && width != "" && parseInt(width.split("px")[0]) > 0) 
-					|| (height != null && height != "" && parseInt(height.split("px")[0]) > 0)) {
-						deferrer.resolve();
-					}
-				}
-			}
-		});
-		iframeAddedObserver.observe(elem, {attributes: true, childList: true, subtree: true});
-		await deferrer;
-		*/
+		
 		return true;
 	};
 
@@ -1515,7 +1611,7 @@ function addToHydrationQueue(elem) {
 		if( enqueued < 3 /*|| isVisible(elem, window)*/)  {
 			loadingSet[elem.parentElement.result.post_id] = true;
 			var result = await doHydrate(elem);
-			console.log(result);
+			//console.log(result);
 			//window.clearInterval(elem.hydrateIntervalId);
 			delete loadingSet[elem.parentElement.result.post_id];
 			var loadNext = awaitingQueue.pop(); 
