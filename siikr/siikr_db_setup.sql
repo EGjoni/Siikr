@@ -1945,14 +1945,6 @@ ALTER TABLE ONLY public.lexeme_blogstats_english
 
 
 --
--- Name: cached_blog_node_map node_blog_cache_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.cached_blog_node_map
-    ADD CONSTRAINT node_blog_cache_fk FOREIGN KEY (blog_uuid) REFERENCES public.blogstats(blog_uuid);
-
-
---
 -- Name: blog_node_map node_blog_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
