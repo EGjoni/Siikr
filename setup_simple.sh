@@ -27,7 +27,7 @@ update_install_packages() {
     echo -e "\033[32mInstall necessary packages? (y/n) \033[36m[will attempt to install the default version your repos provide of php, postgres, hunspell, and certbot]\033[0m"
     read confirm
     if [[ "$confirm" == [yY] || "$confirm" == [yY][eE][sS] ]]; then
-        if sudo apt-get update && sudo apt-get install -y nginx php php-fpm php-pgsql php-zmq php-curl postgresql postgresql-contrib certbot python3-certbot-nginx hunspell hunspell-en-us; then
+        if sudo apt-get update && sudo apt-get install -y nginx php php-fpm php-pgsql php-zmq php-curl php-mbstring postgresql postgresql-contrib certbot python3-certbot-nginx hunspell hunspell-en-us; then
             echo -e "\033[34mPackages updated and installed successfully.\033[0m"
         else
             echo -e "\033[31mFailed to update system packages and install necessary packages.\033[0m"
@@ -153,7 +153,26 @@ EOF
         echo "Setting the default tablespace for the database to '$tablespace_name'."
         sudo -u postgres psql -U postgres -d $siikr_db -f "/tmp/siikr_db_setup.sql"
         sudo -u postgres psql -d $siikr_db -c "GRANT ALL PRIVILEGES ON DATABASE $siikr_db TO $pg_user;"
+        sudo -u postgres psql -d $siikr_db -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO $pg_user;"
+        sudo -u postgres psql -d $siikr_db -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO $pg_user;"
+        sudo -u postgres psql -d $siikr_db -c "GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO $pg_user;"
+        sudo -u postgres psql -d $siikr_db -c "GRANT ALL PRIVILEGES ON ALL PROCEDURES IN SCHEMA public TO $pg_user;"
 	fi
+}
+
+configure_postgresql_auth() {
+    echo -e "\033[32mConfiguring PostgreSQL authentication for user $pg_user...\033[0m"    
+    PG_HBA_CONF=$(sudo -u postgres psql -t -c "SHOW hba_file;" | xargs)
+
+    if [[ -z "$PG_HBA_CONF" ]]; then
+        echo -e "\033[31mFailed to locate pg_hba.conf\033[0m"
+        exit 1
+    fi
+    sudo cp "$PG_HBA_CONF" "$PG_HBA_CONF.backup"
+    # Ensure md5 authentication is added *before* the more general peer entry
+    sudo sed -i "/^local\s\+all\s\+all\s\+peer/i local   all             $pg_user                                md5" "$PG_HBA_CONF"
+    sudo systemctl restart postgresql
+    echo -e "\033[34mPostgreSQL configured to use md5 authentication for $pg_user.\033[0m"
 }
 
 set_credentials_file() {
@@ -200,6 +219,7 @@ set_credentials_file
 configure_nginx
 prompt_certbot
 create_db
+configure_postgresql_auth
 copy_data
 cleanup_temp_dir
 

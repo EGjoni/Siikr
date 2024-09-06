@@ -177,5 +177,5 @@ header('Content-Type: application/json');
 header('X-Accel-Buffering: no');
 ob_implicit_flush(0);
 ob_start('ob_gzhandler');
-$db = new SPDO("pgsql:dbname=$db_name", "www-data", null);
+$db = new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
 beginSearch($db);

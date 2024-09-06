@@ -1,7 +1,7 @@
 <?php
 require_once './../internal/globals.php';
 $blog_uuid = $_GET["blog_uuid"];
-$db = new SPDO("pgsql:dbname=$db_name", $db_user, null);
+$db = new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
 require_once './meta_internal/node_management.php';
 ob_start('ob_gzhandler');
 header('Content-Type: application/json');

@@ -6,7 +6,7 @@ require_once 'post_processor.php';
 $archiver_uuid = uuid_create(UUID_TYPE_RANDOM);
 $archiver_version = '3';
 $userInfo = posix_getpwuid(posix_geteuid());
-$db = new SPDO("pgsql:dbname=$db_name", $userInfo["name"], null);
+$db = new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
 $media_table = 'media';
 
 require_once 'lease.php';
