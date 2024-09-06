@@ -764,8 +764,6 @@ ALTER TEXT SEARCH CONFIGURATION public.english_stem_simple
     ADD MAPPING FOR hword WITH english_stem, simple;
 
 
-SET default_tablespace = '';
-
 SET default_table_access_method = heap;
 
 --
@@ -929,10 +927,8 @@ CREATE VIEW public.debug_frozen_queries AS
   WHERE ((bs.blog_uuid)::text = (aq.blog_uuid)::text);
 
 
-SET default_tablespace = wordcloud_tablespace;
-
 --
--- Name: delete_me_after; Type: TABLE; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
+-- Name: delete_me_after; Type: TABLE; Schema: public; Owner: -; 
 --
 
 CREATE TABLE public.delete_me_after (
@@ -956,7 +952,7 @@ CREATE VIEW public.disk_use_pretty AS
    FROM ((pg_class c
      LEFT JOIN pg_namespace n ON ((n.oid = c.relnamespace)))
      LEFT JOIN pg_tablespace t ON ((c.reltablespace = t.oid)))
-  WHERE ((c.relkind = 'r'::"char") AND (n.nspname = 'public'::name) AND ((t.spcname IS NULL) OR (t.spcname <> 'wordcloud_tablespace'::name)));
+  WHERE ((c.relkind = 'r'::"char") AND (n.nspname = 'public'::name) AND (t.spcname IS NULL));
 
 
 --
@@ -970,9 +966,6 @@ CREATE SEQUENCE public.images_image_id_seq
     NO MINVALUE
     NO MAXVALUE
     CACHE 1;
-
-
-SET default_tablespace = '';
 
 --
 -- Name: media_posts; Type: TABLE; Schema: public; Owner: -
@@ -1113,10 +1106,9 @@ COMMENT ON COLUMN public.lexeme_blogstats_english.blog_freq IS 'number of times 
 COMMENT ON COLUMN public.lexeme_blogstats_english.post_freq IS 'number of posts word has appeared in on this blog / total number of posts in the blog';
 
 
-SET default_tablespace = wordcloud_tablespace;
 
 --
--- Name: lexemes; Type: TABLE; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
+-- Name: lexemes; Type: TABLE; Schema: public; Owner: -; 
 --
 
 CREATE TABLE public.lexemes (
@@ -1185,8 +1177,6 @@ CREATE SEQUENCE public.lexemes_id_seq
 
 ALTER SEQUENCE public.lexemes_id_seq OWNED BY public.lexemes.id;
 
-
-SET default_tablespace = '';
 
 --
 -- Name: media; Type: TABLE; Schema: public; Owner: -
@@ -1393,7 +1383,7 @@ CREATE VIEW public.ugly_diskuse AS
    FROM ((pg_class c
      LEFT JOIN pg_namespace n ON ((n.oid = c.relnamespace)))
      LEFT JOIN pg_tablespace t ON ((c.reltablespace = t.oid)))
-  WHERE ((c.relkind = 'r'::"char") AND (n.nspname = 'public'::name) AND ((t.spcname IS NULL) OR (t.spcname <> 'wordcloud_tablespace'::name)));
+  WHERE ((c.relkind = 'r'::"char") AND (n.nspname = 'public'::name) AND ((t.spcname IS NULL)));
 
 
 --
@@ -1419,10 +1409,8 @@ CREATE TABLE public.users_encountered (
 );
 
 
-SET default_tablespace = wordcloud_tablespace;
-
 --
--- Name: wordclouded_blogs; Type: TABLE; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
+-- Name: wordclouded_blogs; Type: TABLE; Schema: public; Owner: -; 
 --
 
 CREATE TABLE public.wordclouded_blogs (
@@ -1465,9 +1453,6 @@ ALTER TABLE ONLY public.siikr_nodes ALTER COLUMN node_id SET DEFAULT nextval('pu
 --
 
 ALTER TABLE ONLY public.tags ALTER COLUMN tag_id SET DEFAULT nextval('public.tags_tag_id_seq'::regclass);
-
-
-SET default_tablespace = '';
 
 --
 -- Name: active_queries active_queries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
@@ -1532,11 +1517,8 @@ ALTER TABLE ONLY public.blogstats
 ALTER TABLE ONLY public.active_queries
     ADD CONSTRAINT constraint_name UNIQUE (query_text, query_params, blog_uuid);
 
-
-SET default_tablespace = wordcloud_tablespace;
-
 --
--- Name: delete_me_after delete_me_after_pkey; Type: CONSTRAINT; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
+-- Name: delete_me_after delete_me_after_pkey; Type: CONSTRAINT; Schema: public; Owner: -; 
 --
 
 ALTER TABLE ONLY public.delete_me_after
@@ -1544,15 +1526,14 @@ ALTER TABLE ONLY public.delete_me_after
 
 
 --
--- Name: lexeme_blogstats_english lexeme_blogstats_english_pkey; Type: CONSTRAINT; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
---
+-- Name: lexeme_blogstats_english lexeme_blogstats_english_pkey; Type: CONSTRAINT; Schema: public; Owner: -;
 
 ALTER TABLE ONLY public.lexeme_blogstats_english
     ADD CONSTRAINT lexeme_blogstats_english_pkey PRIMARY KEY (blog_uuid, lexeme_id);
 
 
 --
--- Name: lexemes lexeme_unq; Type: CONSTRAINT; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
+-- Name: lexemes lexeme_unq; Type: CONSTRAINT; Schema: public; Owner: -;
 --
 
 ALTER TABLE ONLY public.lexemes
@@ -1560,14 +1541,12 @@ ALTER TABLE ONLY public.lexemes
 
 
 --
--- Name: lexemes lexemes_pkey; Type: CONSTRAINT; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
+-- Name: lexemes lexemes_pkey; Type: CONSTRAINT; Schema: public; Owner: -; 
 --
 
 ALTER TABLE ONLY public.lexemes
     ADD CONSTRAINT lexemes_pkey PRIMARY KEY (id);
 
-
-SET default_tablespace = '';
 
 --
 -- Name: media_posts media_posts_unique; Type: CONSTRAINT; Schema: public; Owner: -
@@ -1609,17 +1588,13 @@ ALTER TABLE ONLY public.posts_tags
     ADD CONSTRAINT posts_tags_pkey PRIMARY KEY (post_id, tag_id, blog_uuid);
 
 
-SET default_tablespace = wordcloud_tablespace;
-
 --
--- Name: selftext_blogstats_english selftext_blogstats_english_pkey; Type: CONSTRAINT; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
+-- Name: selftext_blogstats_english selftext_blogstats_english_pkey; Type: CONSTRAINT; Schema: public; Owner: -; 
 --
 
 ALTER TABLE ONLY public.selftext_blogstats_english
     ADD CONSTRAINT selftext_blogstats_english_pkey PRIMARY KEY (blog_uuid, lexeme_id);
 
-
-SET default_tablespace = '';
 
 --
 -- Name: siikr_nodes siikr_nodes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
@@ -1713,16 +1688,12 @@ CREATE INDEX blog_uuid_nodecache_idx ON public.cached_blog_node_map USING hash (
 CREATE INDEX cached_blog_node_map_blog_uuid_idx ON public.cached_blog_node_map USING hash (blog_uuid);
 
 
-SET default_tablespace = wordcloud_tablespace;
-
 --
--- Name: idx_blog_uuid; Type: INDEX; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
+-- Name: idx_blog_uuid; Type: INDEX; Schema: public; Owner: -;
 --
 
 CREATE INDEX idx_blog_uuid ON public.lexeme_blogstats_english USING hash (blog_uuid);
 
-
-SET default_tablespace = '';
 
 --
 -- Name: idx_blog_uuid_post_date; Type: INDEX; Schema: public; Owner: -
@@ -1746,36 +1717,29 @@ CREATE INDEX idx_hash_media_id ON public.media_posts USING hash (media_id);
 
 
 --
--- Name: idx_hash_post_id; Type: INDEX; Schema: public; Owner: -
+-- Name: idx_hash_post_id; Type: INDEX; Schema: public; Owner: -;
 --
 
 CREATE INDEX idx_hash_post_id ON public.media_posts USING hash (post_id);
 
-
-SET default_tablespace = wordcloud_tablespace;
-
 --
--- Name: idx_lexeme_id; Type: INDEX; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
---
+-- Name: idx_lexeme_id; Type: INDEX; Schema: public; Owner: -; 
 
 CREATE INDEX idx_lexeme_id ON public.lexeme_blogstats_english USING hash (lexeme_id);
 
 
 --
--- Name: idx_ndentries; Type: INDEX; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
+-- Name: idx_ndentries; Type: INDEX; Schema: public; Owner: -; 
 --
 
 CREATE INDEX idx_ndentries ON public.lexeme_blogstats_english USING btree (nentry);
 
 
 --
--- Name: idx_ndocs; Type: INDEX; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
+-- Name: idx_ndocs; Type: INDEX; Schema: public; Owner: -; 
 --
 
 CREATE INDEX idx_ndocs ON public.lexeme_blogstats_english USING btree (ndoc);
-
-
-SET default_tablespace = '';
 
 --
 -- Name: idx_posts_tags_blog_uuid; Type: INDEX; Schema: public; Owner: -
@@ -1825,17 +1789,12 @@ CREATE INDEX lbe_en_self_lexeme_id_hash ON public.lexeme_blogstats_en_self USING
 
 CREATE INDEX lbe_en_self_unuuid_hash ON public.lexeme_blogstats_en_self USING hash (unuuid);
 
-
-SET default_tablespace = wordcloud_tablespace;
-
 --
--- Name: lexeme_unq_idx; Type: INDEX; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
+-- Name: lexeme_unq_idx; Type: INDEX; Schema: public; Owner: -; 
 --
 
 CREATE INDEX lexeme_unq_idx ON public.lexemes USING hash (lexeme);
 
-
-SET default_tablespace = '';
 
 --
 -- Name: media_temp_media_meta_idx; Type: INDEX; Schema: public; Owner: -
@@ -1858,37 +1817,31 @@ CREATE INDEX post_id_1691300947621_index ON public.posts_tags USING btree (post_
 CREATE UNIQUE INDEX post_id_blog_uuid_1691301036952_index ON public.posts USING btree (post_id, blog_uuid);
 
 
-SET default_tablespace = wordcloud_tablespace;
-
 --
--- Name: selftext_blogstats_english_blog_uuid_idx; Type: INDEX; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
+-- Name: selftext_blogstats_english_blog_uuid_idx; Type: INDEX; Schema: public; Owner: -;
 --
 
 CREATE INDEX selftext_blogstats_english_blog_uuid_idx ON public.selftext_blogstats_english USING hash (blog_uuid);
 
 
 --
--- Name: selftext_blogstats_english_lexeme_id_idx; Type: INDEX; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
+-- Name: selftext_blogstats_english_lexeme_id_idx; Type: INDEX; Schema: public; Owner: -;
 --
 
 CREATE INDEX selftext_blogstats_english_lexeme_id_idx ON public.selftext_blogstats_english USING hash (lexeme_id);
 
 
 --
--- Name: selftext_blogstats_english_ndoc_idx; Type: INDEX; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
+-- Name: selftext_blogstats_english_ndoc_idx; Type: INDEX; Schema: public; Owner: -;
 --
 
 CREATE INDEX selftext_blogstats_english_ndoc_idx ON public.selftext_blogstats_english USING btree (ndoc);
 
 
 --
--- Name: selftext_blogstats_english_nentry_idx; Type: INDEX; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
---
-
+-- Name: selftext_blogstats_english_nentry_idx; Type: INDEX; Schema: public; Owner: -;
 CREATE INDEX selftext_blogstats_english_nentry_idx ON public.selftext_blogstats_english USING btree (nentry);
 
-
-SET default_tablespace = '';
 
 --
 -- Name: tag_id_1691505411923_index; Type: INDEX; Schema: public; Owner: -
