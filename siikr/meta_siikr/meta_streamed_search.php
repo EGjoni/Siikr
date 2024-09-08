@@ -10,8 +10,7 @@ $forward_params = $_GET;
 
 function initSearch($username, $forward_params) {
 
-    try {
-        $response = call_tumblr($username, "info", [], true);
+    try {        $response = call_tumblr($username, "info", [], true);
         try {
             $error_string = handleError($response);
             $blog_info = $response->response->blog;
@@ -28,6 +27,7 @@ function initSearch($username, $forward_params) {
         if($usenode != false) {
             cacheBestNode($blog_info->blog_uuid, $usenode);
             forwardRequest($forward_params, 'streamed_search.php', $usenode);
+            askAllNodes($blog_info->blog_uuid, $blog_info); //update nodestats since we're here anyway
             cleanStaleCacheEntries();
         }
     } catch ( Exception $e) {
