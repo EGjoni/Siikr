@@ -129,7 +129,7 @@ function multiCall($urls, $notify_response_update, &$all_responses) {
  * Secretly judges their responses to determine if any are truly worthy.
  * Returns the chosen one.
 */
-function askAllNodes($blog_info) {
+function askAllNodes($blog_uuid, $blog_info=null) {
     global $all_nodes;
     $url_list = []; 
     $nodes_by_url = [];
@@ -144,7 +144,7 @@ function askAllNodes($blog_info) {
     $available_nodes = []; // contains nodes that appear to be alive
     
 
-    $processNodeResponse = function($new_results) use (&$nodes_by_url, &$available_nodes, &$hosting_nodes, &$blog_info) {
+    $processNodeResponse = function($new_results) use (&$nodes_by_url, &$available_nodes, &$hosting_nodes, &$blog_info, &$blog_uuid) {
         foreach($new_results as $result) {
             $node = $nodes_by_url[$result["url"]];
             $json_result = json_decode($result["response"], true);
@@ -160,8 +160,10 @@ function askAllNodes($blog_info) {
                 foreach($json_result["blogstat_info"] as $k => $v) {
                     $node->$k = $v;
                 }
-                registerToBlogNodeMap($blog_info->blog_uuid, $node);
-                $hosting_nodes[] = $node;
+                if(property_exists($blog_info, "blog_uuid") && $blog_info->blog_uuid != null) {
+                    registerToBlogNodeMap($blog_info->blog_uuid, $node);
+                    $hosting_nodes[] = $node;
+                }
             }
         }
     };
@@ -169,10 +171,10 @@ function askAllNodes($blog_info) {
     multiCall($url_list, $processNodeResponse, $all_responses);
     $bestNode = null;
     if(count($hosting_nodes) > 0) {
-        $bestNode = tieBreaker($hosting_nodes, $blog_info);
+        $bestNode = tieBreaker($hosting_nodes, $blog_uuid, $blog_info);
     }
     if($bestNode == null) {
-        $bestNode = tieBreaker($available_nodes, $blog_info);
+        $bestNode = tieBreaker($available_nodes, $blog_uuid, $blog_info);
     }
     return $bestNode;
 }
@@ -197,9 +199,8 @@ function cacheBestNode($blog_uuid, $node) {
     $cachedNode_upsert->exec([
         "blog_uuid" => $blog_uuid, 
         "node_id" => $node->node_id
-    ]);
+    ]);    
 }
-
 
 $cached_prep = $db->prepare("SELECT sn.* FROM cached_blog_node_map cbnm, siikr_nodes sn WHERE cbnm.blog_uuid = :blog_uuid AND sn.node_id = cbnm.node_id" );
 $known_prep = $db->prepare(
@@ -229,6 +230,9 @@ function findBestKnownNode($blog_uuid, $blog_info=null) {
     } else {        
         $known_hosts = $known_prep->exec(["blog_uuid"=>$blog_uuid])->fetchAll(PDO::FETCH_OBJ);
         if($known_hosts) {
+            if(count($known_hosts) == 1) {
+                return $known_hosts[0];
+            } 
             if(count($known_hosts) > 1) {
                 $bestCandidate = tieBreaker($known_hosts, $blog_uuid, $blog_info);
                 if($bestCandidate != null) {
@@ -239,13 +243,11 @@ function findBestKnownNode($blog_uuid, $blog_info=null) {
         return null;
     }
 }
-
 /**
  * given multiple hosts, determines which one should perform the search based 
  * solely on capacity, 
  * indexed_post_count, 
- * and reliability score
- * 
+ * and reliability score  
  * //TODO: make it not just be a random number
  **/
 function tieBreaker($hostList, $blog_uuid, $blogInfo=null) {
@@ -267,11 +269,12 @@ function tieBreaker($hostList, $blog_uuid, $blogInfo=null) {
                 continue;
             }
         }
+        $score = 1.0+((float)$host->reliabiltiy/10.0);
         if(property_exists($host, "indexed_post_count")) { 
-            $score = 1+(float)$host->indexed_post_count/(isset($blog_info) ? (float)$blogInfo->posts : 1);
+            $score *= 1+(float)$host->indexed_post_count/(isset($blog_info) ? (float)$blogInfo->posts : 1);
         }
-        $score *= $host->free_space_mb;
-        $score *= 1.0+((float)$host->reliabiltiy/10.0);
+        $score *= $host->free_space_mb; 
+        $host->score = $score;       
         $viableCandidates[] = $host;
     }
     if(count($viableCandidates) == 0 ) return null; 

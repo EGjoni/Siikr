@@ -3,7 +3,7 @@
 tumblr_API_consumer_key="YOUR TUMBLR API CONSUMER KEY GOES HERE"
 pg_pass= #your intended db password here
 #db_disk="UNCOMMENT THIS LINE AND REPLACE THIS WITH A CUSTOM DIRECTORY LOCATION IF YOU WANT POSTGRES TO STORE THE DATABASES SOMEWHERE OTHER THEN YOUR MAIN SYSTEM DRIVE"
-document_root="/var/www/siikr/" #location you want to install siikr into
+document_root="/var/www/" #location you want to install siikr into
 #the following line is primarily used to setup the nginx site and register ssl certificates.
 siikr_domain="YOUR SIIKR DOMAIN GOES HERE" #for example, if you intend to host siikr on siikr.geodudecities.com, then you would enter 'siikr.geodudecities.com'
 #you may contact antinegationism or post a thread on the github if you don't have a domain for your siikr node, and one can be provided for your the ip address of your server.

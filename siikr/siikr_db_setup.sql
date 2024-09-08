@@ -847,8 +847,8 @@ CREATE TABLE public.archiver_leases (
 --
 
 CREATE TABLE public.blog_node_map (
-    node_id integer,
-    blog_uuid text,
+    node_id integer NOT NULL,
+    blog_uuid text NOT NULL,
     indexed_posts integer,
     is_indexing boolean,
     success boolean,
@@ -883,7 +883,7 @@ CREATE TABLE public.blogstats (
 
 CREATE TABLE public.cached_blog_node_map (
     blog_uuid text NOT NULL,
-    node_id integer,
+    node_id integer NOT NULL,
     established timestamp without time zone,
     last_interaction timestamp without time zone
 );
@@ -1942,15 +1942,6 @@ ALTER TABLE ONLY public.media_posts
 
 ALTER TABLE ONLY public.lexeme_blogstats_english
     ADD CONSTRAINT lexeme_blogstats_english_blog_uuid_fkey FOREIGN KEY (blog_uuid) REFERENCES public.wordclouded_blogs(blog_uuid);
-
-
---
--- Name: blog_node_map node_blog_fk; Type: FK CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.blog_node_map
-    ADD CONSTRAINT node_blog_fk FOREIGN KEY (blog_uuid) REFERENCES public.blogstats(blog_uuid);
-
 
 --
 -- Name: posts posts_blog_uuid_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -

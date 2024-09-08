@@ -1,9 +1,8 @@
 <?php
 
 require_once '../internal/globals.php';
-require_once '../internal/disks.php';
 $userInfo = posix_getpwuid(posix_geteuid());
-$db = new PDO("pgsql:dbname=$db_name", $userInfo["name"], null);
+$db = new PDO("pgsql:dbname=$db_name", $pg_user, $pg_pass);
 $outpath = "/var/www/archived";
 
 function prompt($message) {

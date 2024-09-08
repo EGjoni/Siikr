@@ -2,7 +2,6 @@
 $scriptVer = 68;
 require_once 'internal/disks.php';
 try {
-
 	$diskpath = $db_disk;
 	$total_diskspace = disk_total_space($diskpath);
 	$free_space = disk_free_space($diskpath);
