@@ -103,7 +103,7 @@ configure_nginx() {
 server {
     listen 80;
     server_name $siikr_domain;
-    root $document_root;
+    root $document_root/siikr;
 
     index index.php index.html index.htm;
     location / {
@@ -253,5 +253,6 @@ create_msg_router
 set_credentials_file
 configure_nginx
 create_db
+configure_postgresql_auth
 copy_data
 echo -e "\033[33mSetup complete. If this script didn't work for you, please fix it and contribute back.\033[0m"
