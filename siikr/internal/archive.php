@@ -257,6 +257,7 @@ try {
         array_push($gap_queue, $post_last_indexed_info);
     $max_loop_count = count($gap_queue) * 2;
     $response_post_num = 0;
+    $limit_start = 50;
     do {
         $before_info = array_pop($gap_queue);
         $before_time = $before_info == null? null:$before_info->timestamp;
@@ -264,12 +265,40 @@ try {
         do {
             $isUpgrade = false; //gets set to true for notifications downstream
             $disk_use = get_disk_stats();        
-            $params = ['limit' => 50, 'notes_info' => "true", 'npf' => 'true', 'before' => $before_time, 'sort' => 'desc'];
-            $server_blog_info = call_tumblr($blog_name, 'posts', $params);
-            
+            $params = ['limit' => $limit_start, 'notes_info' => "true", 'npf' => 'true', 'before' => $before_time, 'sort' => 'desc'];
+            do { //apparently sometimes the api just flat out breaks if you ask for more posts than it has.
+                $server_blog_info = call_tumblr($blog_name, 'posts', $params);
+                if($server_blog_info == null) {
+                    if($limit_start/2 <= 1 && $params["notes_info"] == true) {
+                        $params["notes_info"] = false; //a lot of times the API breaking happens as a result of note data i guess, so  try without those before giving up  
+                    }
+                    $limit_start = $limit_start / 2;
+                }
+                if($before_info?->inclusive == true) {
+                    $contained = false;
+                    foreach($server_blog_info->posts as $post) {
+                        if($post->id_string == $before_info->post_id) {
+                            $contained = true;
+                            break;
+                        }
+                        //echo ($before_info->timestamp - $post->timestamp)."\n";
+                    }
+                    if(!$contained) {
+                        $before_info->timestamp = $before_info->actual_timestamp;
+                        $server_blog_info->posts = [$before_info, ...$server_blog_info->posts];
+                        //echo "\nhuh???\n";
+                    }
+                }
+                $params["limit"] =  max((int)$limit_start, 1);                
+            } while($server_blog_info == null && (int)$limit_start >= 1);
+
+            if($server_blog_info == null)
+                $server_blog_info = (object)["posts"=>[]];
+            else $limit_start = min(50, (int)$limit_start * 4);
             
             foreach ($server_blog_info->posts as $post) {
                 $post->id = $post->id_string;
+                //echo "attempting: $post->id\n";
                 if(@$most_recent_post_id == null || $post->timestamp > @$most_recent_post_info->timestamp) {
                     $most_recent_post_id = (int)$post->id;
                     $most_recent_post_info = $post;
@@ -471,12 +500,11 @@ try {
         } while (!empty($server_blog_info->posts));
         
         if(empty($gap_queue)) {
-            $max_date = time();
-            if($newest_old_version_post != null) {
-                $max_date = $newest_old_version_post->timestamp;
-            } else {
+            $max_date = time();           
+            if($newest_old_version_post == null) {
                 $newest_old_version_post = $get_newest_obsolete_post->exec(["blog_uuid"=>$blog_uuid, 'max_date'=> $max_date])->fetch(PDO::FETCH_OBJ);
             }
+            $max_date = $newest_old_version_post->timestamp;
             $binary_threshold = max($server_blog_info->total_posts * 0.99, max($server_blog_info->total_posts-100, $server_blog_info->total_posts*0.99));
             if($db_blog_info->indexed_post_count < $binary_threshold) {
                 $delta = -($db_blog_info->indexed_post_count - $server_blog_info->total_posts);
@@ -524,29 +552,49 @@ try {
                      * in theory we could retrieve the post from the database, but if the user edited the post, our timestamp will be wrong
                      * and we will miss it. So at least this way we can be sure we get everything.
                     */
-                    $params = ['limit' => 1, 'id' => $newest_old_version_post->post_id];
-                    $tumblr_result =  call_tumblr($blog_name, 'posts', $params, true);
+                    $iparams = ['limit' => 1, 'id' => $newest_old_version_post->post_id];
+                    $tumblr_result =  call_tumblr($blog_name, 'posts', $iparams, true);
                     $posts = [];
                     $tryAnother = false;
                     if($tumblr_result->meta->status == 200) {
                         $posts = $tumblr_result->response->posts;
                     }
-                    if(count($posts) > 0) {
-                        $newest_obsolete_post_info = $posts[0];
-                        $newest_obsolete_post_info->timestamp +=1;
-                        $loop_count--;
-                        array_push($gap_queue, $newest_obsolete_post_info); 
-                        
-                    } else if(property_exists($tumblr_result, "errors")) {
-                        foreach($tumblr_result->errors as $err) {
-                            if($err->title == "Not Found") {
-                                $set_post_deleted->exec(["post_id"=>$newest_old_version_post->post_id]);
-                                break;
+                    $reanalyze = count($posts) > 0; 
+                    if($reanalyze) {
+                        $db_p_inf = $stmt_get_post_info->exec(["post_id" => $posts[0]->id_string])->fetch(PDO::FETCH_OBJ);
+                        if($db_p_inf->index_version == $archiver_version)
+                            $reanalyze = false;
+                    }
+
+                    if($reanalyze) {
+                        $newest_old_version_post = $posts[0];
+                        $newest_old_version_post->inclusive = true;
+                        if(property_exists($newest_old_version_post, "id_string")) {
+                            $newest_old_version_post->post_id = $newest_old_version_post->id_string;
+                            $newest_old_version_post->id = $newest_old_version_post->id_string;
+                            $newest_old_version_post->actual_timestamp = $newest_old_version_post->timestamp;
+                        }
+                        $newest_old_version_post->timestamp +=1;
+                        if(count($server_blog_info->posts) > 0) $loop_count--; //in case tumblr is fucking with us. Which it does, sometimes.
+                        //echo "queing: $newest_old_version_post->post_id\n";
+                        array_push($gap_queue, $newest_old_version_post);
+                    } else {
+                        if(property_exists($tumblr_result, "errors")) {
+                            foreach($tumblr_result->errors as $err) {
+                                if($err->title == "Not Found") {
+                                    //echo "deleting : $newest_old_version_post->post_id\n";
+                                    $set_post_deleted->exec(["post_id"=>$newest_old_version_post->post_id]);                                    
+                                    $tryAnother = true;
+                                    break;
+                                }
                             }
                         }
-                        $max_date = $newest_old_version_post->timestamp;
                         $newest_old_version_post = $get_newest_obsolete_post->exec(["blog_uuid"=>$blog_uuid, 'max_date'=> $max_date])->fetch(PDO::FETCH_OBJ);
-                        $tryAnother = true;
+                        if($newest_old_version_post != false) {
+                            $max_date = $newest_old_version_post->timestamp;
+                            //echo "checking: $newest_old_version_post->post_id\n";
+                        }
+                        else break;
                     }
                 } while($tryAnother);
                               
