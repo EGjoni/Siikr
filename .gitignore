@@ -3,4 +3,9 @@ siikr/dev/**
 siikr/auth/**
 siikr/internal/disks.php
 siikr/management/archive_blogs.php
+node_specific/**
+node_specific
+previous_version
+previous_version/**
 ~siikr.conf
+siikr.conf

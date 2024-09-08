@@ -102,5 +102,5 @@ function encodeAndFlush($obj) {
 
 header('Content-Type: application/json');
 ob_start('gz_handler');
-$db = new SPDO("pgsql:dbname=$db_name", "www-data", null);
+$db = new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
 beginSearch($db);

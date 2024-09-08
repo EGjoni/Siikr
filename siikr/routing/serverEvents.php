@@ -17,6 +17,7 @@ ini_set('max_execution_time', 60*60*7.5); //7.5 hours. Just shy of mysql's defau
 
 header("Cache-Control: no-cache");
 header('Access-Control-Allow-Origin: *');
+header("Access-Control-Allow-Headers: Content-Type");  // Explicitly allow Content-Type
 header("Content-Type: text/event-stream");
 header('X-Accel-Buffering: no');
 

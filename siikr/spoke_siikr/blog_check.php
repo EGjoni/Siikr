@@ -23,7 +23,7 @@
 require_once './../internal/globals.php';
 $blog_uuid = $_GET["blog_uuid"];
 
-$db = new SPDO("pgsql:dbname=$db_name", $db_user, null);
+$db = new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
 $free_space_mb = capped_freespace($db);
 $estimated_remaining_post_capacity = estimatePostIngestLimit($db, $freespace_mb);
 $result = [

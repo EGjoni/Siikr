@@ -2,7 +2,7 @@
 require_once './../internal/globals.php';
 $username = $_GET["username"];
 header('Content-Type: application/json');
-$db = new SPDO("pgsql:dbname=$db_name", $db_user, null);
+$db = new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
 require_once './meta_internal/node_management.php';
 $checkinQueue = [];
 $forward_params = $_GET;

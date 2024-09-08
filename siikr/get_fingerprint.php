@@ -11,7 +11,7 @@ if ($blog_uuid == null) {
 	$userInfo = posix_getpwuid(posix_geteuid());
 	$db_user = $userInfo["name"];
 }
-$db = new SPDO("pgsql:dbname=$db_name", $db_user, null);
+$db = new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
 
 $blog_name = $argc > 1 ? $argv[1] : null;
 if ($blog_uuid == null) {

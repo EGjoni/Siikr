@@ -2,7 +2,7 @@
 require_once 'internal/globals.php';
 $blog_uuid = $_GET["blog_uuid"];
 try {
-    $db = new PDO("pgsql:dbname=$db_name", "www-data", null);
+    $db = new PDO("pgsql:dbname=$db_name", $db_user, $db_pass);
     $blog_info = (object)[
         "valid" => false,
         "blog_uuid" => $blog_uuid,
