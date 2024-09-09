@@ -27,7 +27,7 @@ update_install_packages() {
     echo -e "\033[32mInstall necessary packages? (y/n) \033[36m[will attempt to install the default version your repos provide of php, postgres, hunspell, and certbot]\033[0m"
     read confirm
     if [[ "$confirm" == [yY] || "$confirm" == [yY][eE][sS] ]]; then
-        if sudo apt-get update && sudo apt-get install -y nginx php php-fpm php-pgsql php-zmq php-curl php-mbstring postgresql postgresql-contrib certbot python3-certbot-nginx hunspell hunspell-en-us; then
+        if sudo apt-get update && sudo apt-get install -y nginx php php-fpm php-pgsql php-zmq php-curl php-mbstring postgresql postgresql-contrib apgdiff certbot python3-certbot-nginx hunspell hunspell-en-us; then
             echo -e "\033[34mPackages updated and installed successfully.\033[0m"
         else
             echo -e "\033[31mFailed to update system packages and install necessary packages.\033[0m"
@@ -103,7 +103,7 @@ configure_nginx() {
 server {
     listen 80;
     server_name $siikr_domain;
-    root $document_root;
+    root $document_root/siikr;
 
     index index.php index.html index.htm;
     location / {
@@ -253,5 +253,6 @@ create_msg_router
 set_credentials_file
 configure_nginx
 create_db
+configure_postgresql_auth
 copy_data
 echo -e "\033[33mSetup complete. If this script didn't work for you, please fix it and contribute back.\033[0m"
