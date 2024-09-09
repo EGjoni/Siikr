@@ -269,12 +269,20 @@ function tieBreaker($hostList, $blog_uuid, $blogInfo=null) {
                 continue;
             }
         }
+        if($host->estimated_calls_remaining == 0) { //this host can't interact with tumblr for a while
+            continue;
+        }
         $score = 1.0+((float)$host->reliabiltiy/10.0);
         if(property_exists($host, "indexed_post_count")) { 
-            $score *= 1+(float)$host->indexed_post_count/(isset($blog_info) ? (float)$blogInfo->posts : 1);
+            $posts_indexed = 1+(float)($host->indexed_post_count ?? 0);
+            $posts_existing = (isset($blog_info) ? (float)$blogInfo->posts : 1);
+            $score *= $posts_indexed / $posts_existing; 
+            $estimated_calls_required = $posts_existing - $posts_indexed;
+            //prefer not to use hosts that don't have very many calls left
+            $score *= $host->estimated_calls_remaining/($estimated_calls_required*10);
         }
-        $score *= $host->free_space_mb; 
-        $host->score = $score;       
+        $score *= $host->free_space_mb;
+        $host->score = $score;
         $viableCandidates[] = $host;
     }
     if(count($viableCandidates) == 0 ) return null; 

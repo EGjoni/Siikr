@@ -97,7 +97,7 @@ function get_base_url($blog_name_or_uuid, $request_type) {
 }
 
 $dbconn = null;
-function log_api_call($status_code) {
+function log_api_call($status_code, $est_reavailable) {
     global $dbconn, $db_name, $db_user, $db_pass;
     if ($dbconn === null) {
         $connection_string = "dbname=$db_name user=$db_user password=$db_pass";
@@ -109,7 +109,7 @@ function log_api_call($status_code) {
             }
         });
     }
-    $query = "INSERT INTO public.self_api_hist (req_time, response_code) VALUES (NOW(), $status_code);
+    $query = "INSERT INTO public.self_api_hist (req_time, response_code, est_reavailable) VALUES (NOW(), $status_code, $est_reavailable);
     REFRESH MATERIALIZED VIEW public.self_api_summary;";
     while(pg_connection_busy($dbconn)) {
         usleep(1000);
@@ -126,7 +126,6 @@ function call_tumblr($blog_name_or_uuid, $request_type, $params=[], $with_meta =
     $url = get_base_url($blog_name_or_uuid, $request_type).http_build_query($params);
     $context = stream_context_create($options);
     $response_s = file_get_contents($url, false, $context);
-    
     $detected_encoding = mb_detect_encoding('UTF-8', $possible_encodings);
     $response_j = mb_convert_encoding($response_s, 'UTF-8', $detected_encoding);
     $response = json_decode($response_j);
@@ -137,7 +136,11 @@ function call_tumblr($blog_name_or_uuid, $request_type, $params=[], $with_meta =
         $response->meta = parseHeadersToObj($http_response_header);
     }
     $status_code = $response->meta->status;
-    log_api_call($status_code);
+    if($status_code == 429) {
+        $http_response_header = $http_response_header ?? [];
+        $est_reavailable = determine_reavailability($http_response_header);
+    }
+    log_api_call($status_code, $est_reavailable);
     if($asString) {
         return $response_j;
     }
@@ -146,6 +149,32 @@ function call_tumblr($blog_name_or_uuid, $request_type, $params=[], $with_meta =
     }
     
     return $response->response;
+}
+
+function determine_reavailability($headers) {
+    $resetInSeconds = null;
+    foreach ($headers as $header) {
+        if (preg_match('/X-Ratelimit-Perday-Remaining: 0/i', $header)) {
+            // Day limit hit, calculate seconds until reset
+            $dayReset = extract_reset_time($headers, 'X-Ratelimit-Perday-Reset');
+            $resetInSeconds = $dayReset > $resetInSeconds ? $dayReset : $resetInSeconds;
+        } elseif (preg_match('/X-Ratelimit-Perhour-Remaining: 0/i', $header)) {
+            // Hour limit hit, calculate seconds until reset
+            $hourReset = extract_reset_time($headers, 'X-Ratelimit-Perhour-Reset');
+            $resetInSeconds = $hourReset > $resetInSeconds ? $hourReset : $resetInSeconds;
+        }
+    }
+    return $resetInSeconds;
+}
+
+function extract_reset_time($headers, $resetHeader) {
+    foreach ($headers as $header) {
+        if (strpos($header, $resetHeader) !== false) {
+            $parts = explode(':', $header);
+            return trim($parts[1]);
+        }
+    }
+    return null;
 }
 
 function parseHeadersToObj($http_response_header) {

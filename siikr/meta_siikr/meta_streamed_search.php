@@ -10,7 +10,8 @@ $forward_params = $_GET;
 
 function initSearch($username, $forward_params) {
 
-    try {        $response = call_tumblr($username, "info", [], true);
+    try {        
+        $response = call_tumblr($username, "info", [], true);
         try {
             $error_string = handleError($response);
             $blog_info = $response->response->blog;

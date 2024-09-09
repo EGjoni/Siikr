@@ -13,9 +13,11 @@
  *  index_request_count: int // how many times this spoke has been requested to index this blog.
  * }
  * 
- * estimated_remaining_post_capacity: int, //estimate of the number of posts this spoke has room for
- * free_space_mb: float //raw allocated capacity in mb
- * need_help: boolean // true if some error occurred. false/unset/null otherwise.
+ * estimated_remaining_post_capacity: int, //estimate of the number of posts this spoke has diskspace for
+ * free_space_mb: float, //raw allocated capacity in mb
+ * estimated_calls_remaining: int //estimated number of api calls this spoke has left before getting rate limited again
+ * estimated_reavailability: int //null or -1 if the spoke is currently capable of making calls, otherwise, the estimated number of seconds until this spoke is available to make calls again
+ * need_help: boolean, // true if some error occurred. false/unset/null otherwise.
  * malformed: boolean // true if some error occurred and it doesn't seem to be on our end.
  * }
 */
@@ -31,6 +33,36 @@ $result = [
     "estimated_remaining_post_capacity" => $estimated_remaining_post_capacity,
     "free_space_mb" => $free_space_mb
 ];
+
+
+$last_stat_obj = $db->prepare("SELECT EXTRACT(epoch FROM req_time)::INT as req_time, response_code::INT, est_reavailable FROM self_api_hist ORDER by req_time desc LIMIT 1")->exec([])->fetch(PDO::FETCH_OBJ);
+$summary_stat_obj = $db->prepare("SELECT * FROM self_api_summary")->exec([])->fetch(PDO::FETCH_OBJ);
+$hr_limit = $am_unlimited ? 50000 : 1000;
+$day_limit = $am_unlimited ? 250000 : 5000;
+$est_revailability = null;
+$est_calls_remaining = 1000;
+$hr_calls_remaining = $hr_limit - $summary_stat_obj->requests_this_hour;
+$day_calls_remaining = $day_limit - $summary_stat_obj->requests_today;
+$est_calls_remaining = min($hr_calls_remaining, $day_calls_remaining);
+
+if($last_stat_obj->response_code == 429) {    
+    if($last_stat_obj?->est_reavailable != null) {
+        $est_revailability = $last_stat_obj->est_reavailable;
+    } else if($summary_stat_obj?->est_reavailable != null) {
+        $est_revailability = (int)($summary_stat_obj->est_reavailable);
+    } else {
+        $est_revailability = 24*60*60;
+    }
+    $est_revailability = $est_revailability - ((int)time()-$last_stat_obj->req_time);
+    if($est_revailability > 0) {
+        $result["estimated_reavailability"] = $est_revailability;
+        $est_calls_remaining = 0;
+    }
+}
+$result["estimated_calls_remaining"] = $est_calls_remaining;
+
+
+
 if($blog_uuid != null) {
     try {
         $get_blogstats = $db->prepare(
