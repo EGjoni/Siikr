@@ -109,6 +109,7 @@ function log_api_call($status_code, $est_reavailable) {
             }
         });
     }
+    if($est_reavailable == null) $est_reavailable = "NULL";
     $query = "INSERT INTO public.self_api_hist (req_time, response_code, est_reavailable) VALUES (NOW(), $status_code, $est_reavailable);
     REFRESH MATERIALIZED VIEW public.self_api_summary;";
     while(pg_connection_busy($dbconn)) {
