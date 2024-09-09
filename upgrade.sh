@@ -55,7 +55,13 @@ echo "Schema migration script is generated and stored at: $diff_file"
 echo "Running schema migration"
 
 sudo -u postgres psql -U postgres -d $siikr_db -f "/tmp/migration.sql"
-
+sudo -u postgres psql -d $siikr_db -c "GRANT ALL PRIVILEGES ON DATABASE $siikr_db TO $pg_user;"
+sudo -u postgres psql -d $siikr_db -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO $pg_user;"
+sudo -u postgres psql -d $siikr_db -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO $pg_user;"
+sudo -u postgres psql -d $siikr_db -c "GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO $pg_user;"
+sudo -u postgres psql -d $siikr_db -c "GRANT ALL PRIVILEGES ON ALL PROCEDURES IN SCHEMA public TO $pg_user;"
+sudo -u postgres psql -d $siikr_db -c "ALTER ROLE $pg_user SUPERUSER;"
+sudo systemctl restart postgresql
 
 
 rsync -av --exclude '.vscode/' \
