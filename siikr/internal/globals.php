@@ -109,10 +109,12 @@ function log_api_call($status_code) {
             }
         });
     }
-    $query = "INSERT INTO public.self_api_hist (req_time, response_code) VALUES (NOW(), $status_code);";
+    $query = "INSERT INTO public.self_api_hist (req_time, response_code) VALUES (NOW(), $status_code);
+    REFRESH MATERIALIZED VIEW public.self_api_summary;";
+    while(pg_connection_busy($dbconn)) {
+        usleep(1000);
+    }
     pg_send_query($dbconn, $query);
-    pg_send_query($dbconn, "REFRESH MATERIALIZED VIEW public.self_api_summary;");
-    pg_send_query($dbconn, "DELETE FROM public.self_api_hist WHERE req_time < NOW() - INTERVAL '24 hours';");
 }
 
 
