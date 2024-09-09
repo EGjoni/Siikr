@@ -96,6 +96,25 @@ function get_base_url($blog_name_or_uuid, $request_type) {
         return "https://api.tumblr.com/v2/blog/{$blog_name_or_uuid}.tumblr.com/$request_type?";
 }
 
+$dbconn = null;
+function log_api_call($status_code) {
+    global $dbconn, $db_name, $db_user, $db_pass;
+    if ($dbconn === null) {
+        $connection_string = "dbname=$db_name user=$db_user password=$db_pass";
+        $dbconn = pg_connect($connection_string);
+        register_shutdown_function(function() use (&$dbconn) {
+            if ($dbconn) {
+                pg_close($dbconn);
+                $dbconn = null;
+            }
+        });
+    }
+    $query = "INSERT INTO public.self_api_hist (req_time, response_code) VALUES (NOW(), $status_code);";
+    pg_send_query($dbconn, $query);
+    pg_send_query($dbconn, "REFRESH MATERIALIZED VIEW public.self_api_summary;");
+    pg_send_query($dbconn, "DELETE FROM public.self_api_hist WHERE req_time < NOW() - INTERVAL '24 hours';");
+}
+
 
 function call_tumblr($blog_name_or_uuid, $request_type, $params=[], $with_meta = false, $asString = false) {
     global $api_key; global $possible_encodings;
@@ -108,34 +127,53 @@ function call_tumblr($blog_name_or_uuid, $request_type, $params=[], $with_meta =
     
     $detected_encoding = mb_detect_encoding('UTF-8', $possible_encodings);
     $response_j = mb_convert_encoding($response_s, 'UTF-8', $detected_encoding);
-    if($asString) 
-        return $response_j;
-    //$response = mb_convert_encoding($response, 'UTF-8', $possible_encodings);
     $response = json_decode($response_j);
-    
-    //$cleanResponse = preg_replace('/[\x00-\x09\x0B\x0C\x0E-\x1F\x80-\xFF]/','', $response);
-   
-    /*if($response->meta->status != 200) {
-        throw new Error(implode(', ', get_object_vars($response->errors)));
-    }*/
+    $status_code = 200;
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        $response = (object)[];
+        //sometimes tumblr responds with a proper json object, other times with a redirect, and there's no way of know when it will do which
+        $response->meta = parseHeadersToObj($http_response_header);
+    }
+    $status_code = $response->meta->status;
+    log_api_call($status_code);
+    if($asString) {
+        return $response_j;
+    }
     if($with_meta) {
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            if(isset($http_response_header)) {
-                //sometimes tumblr responds with a proper json object, other times with a redirect, and there's no way of know when it will do which
-                foreach ($http_response_header as $header) {
-                    if (preg_match('/^HTTP\/\d+\.\d+ (\d+) /', $header, $matches)) {
-                        $status_code = (int)$matches[1];
-                        $fake_obj = (object)["meta"=> ["status" => $status_code],
-                                            "errors" => [(object)["title" => "Not Found"]]];
-                        return $fake_obj;
-                    }
-                }
-            }
-            throw new Error(json_last_error_msg());
-        }
         return $response;
     }
+    
     return $response->response;
+}
+
+function parseHeadersToObj($http_response_header) {
+    $status_code = extractFirstStatusCode($http_response_header);
+    $fake_obj = (object)["meta"=> (object)["status" => $status_code]];
+    $fake_obj->errors = [];
+    if($status_code == 404) {
+        $fake_obj->errors[] = (object)["title" => "Not Found"];
+    }
+    if($status_code == 429) {
+        $fake_obj->errors[] = (object)["title" =>  "Limit Exceeded"];
+    }
+    return $fake_obj;
+}
+
+function extractFirstStatusCode($http_response_header) {
+    foreach ($http_response_header as $header) {
+        $status_code = extractStatus($header);
+        if($status_code != null) {
+            return $status_code;
+        }
+    } 
+    return 200;
+}
+
+function extractStatus($header) {
+    if (preg_match('/^HTTP\/\d+\.\d+ (\d+) /', $header, $matches)) {
+        $status_code = (int)$matches[1];
+        return $status_code;
+    } else return null;
 }
 
 function execAllSearches($db, $search_array, $match_condition, $exec_params) {

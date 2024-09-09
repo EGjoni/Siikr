@@ -2,7 +2,8 @@
 
 require_once '../internal/globals.php';
 $userInfo = posix_getpwuid(posix_geteuid());
-$db = new PDO("pgsql:dbname=$db_name", $pg_user, $pg_pass);
+$db = new PDO("pgsql:dbname=$db_name", $userInfo["name"], null);
+$basePath = "/mnt/volume_sfo3_02/archived/";
 $outpath = "/var/www/archived";
 
 function prompt($message) {
@@ -30,7 +31,7 @@ function createFifo($fifoPath) {
 }
 
 function exportData($blogInfo) {
-    global $outpath, $db_name;
+    global $basePath, $outpath, $db_name;
 
     // Assuming $db_name is defined in 'globals.php' and accessible here
     $username = 'eron'; // Your PostgreSQL username

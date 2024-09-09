@@ -34,7 +34,7 @@ existing_schema_dump="$script_dir/tmp_schema/existing_siikr.sql"
 new_schema_file="$script_dir/siikr/siikr_db_setup.sql"
 diff_file="$script_dir/tmp_schema/siikr_schema_migration.sql"
 
-PGPASSWORD="$pg_pass" pg_dump -U "$pg_user" -h localhost -d "$siikr_db" --schema-only --no-owner > "$existing_schema_dump"
+PGPASSWORD="$pg_pass" pg_dump -U "$pg_user" -d "$siikr_db" --schema-only --no-owner > "$existing_schema_dump"
 if [ $? -ne 0 ]; then
     echo "Failed to dump the existing database schema."
     exit 1

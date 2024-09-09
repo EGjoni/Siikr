@@ -764,6 +764,8 @@ ALTER TEXT SEARCH CONFIGURATION public.english_stem_simple
     ADD MAPPING FOR hword WITH english_stem, simple;
 
 
+SET default_tablespace = '';
+
 SET default_table_access_method = heap;
 
 --
@@ -847,7 +849,7 @@ CREATE TABLE public.archiver_leases (
 --
 
 CREATE TABLE public.blog_node_map (
-    node_id integer NOT NULL,
+    node_id integer,
     blog_uuid text NOT NULL,
     indexed_posts integer,
     is_indexing boolean,
@@ -883,7 +885,7 @@ CREATE TABLE public.blogstats (
 
 CREATE TABLE public.cached_blog_node_map (
     blog_uuid text NOT NULL,
-    node_id integer NOT NULL,
+    node_id integer,
     established timestamp without time zone,
     last_interaction timestamp without time zone
 );
@@ -927,8 +929,10 @@ CREATE VIEW public.debug_frozen_queries AS
   WHERE ((bs.blog_uuid)::text = (aq.blog_uuid)::text);
 
 
+SET default_tablespace = wordcloud_tablespace;
+
 --
--- Name: delete_me_after; Type: TABLE; Schema: public; Owner: -; 
+-- Name: delete_me_after; Type: TABLE; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
 --
 
 CREATE TABLE public.delete_me_after (
@@ -952,7 +956,7 @@ CREATE VIEW public.disk_use_pretty AS
    FROM ((pg_class c
      LEFT JOIN pg_namespace n ON ((n.oid = c.relnamespace)))
      LEFT JOIN pg_tablespace t ON ((c.reltablespace = t.oid)))
-  WHERE ((c.relkind = 'r'::"char") AND (n.nspname = 'public'::name) AND (t.spcname IS NULL));
+  WHERE ((c.relkind = 'r'::"char") AND (n.nspname = 'public'::name) AND ((t.spcname IS NULL) OR (t.spcname <> 'wordcloud_tablespace'::name)));
 
 
 --
@@ -966,25 +970,6 @@ CREATE SEQUENCE public.images_image_id_seq
     NO MINVALUE
     NO MAXVALUE
     CACHE 1;
-
---
--- Name: media_posts; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.media_posts (
-    post_id bigint,
-    media_id integer
-);
-
-
---
--- Name: images_posts; Type: VIEW; Schema: public; Owner: -
---
-
-CREATE VIEW public.images_posts AS
- SELECT media_posts.media_id AS image_id,
-    media_posts.post_id
-   FROM public.media_posts;
 
 
 --
@@ -1055,6 +1040,8 @@ CREATE VIEW public.index_use_toast AS
   ORDER BY (pg_relation_size((c.oid)::regclass)) DESC;
 
 
+SET default_tablespace = '';
+
 --
 -- Name: lexeme_blogstats_en_self; Type: TABLE; Schema: public; Owner: -
 --
@@ -1106,9 +1093,10 @@ COMMENT ON COLUMN public.lexeme_blogstats_english.blog_freq IS 'number of times 
 COMMENT ON COLUMN public.lexeme_blogstats_english.post_freq IS 'number of posts word has appeared in on this blog / total number of posts in the blog';
 
 
+SET default_tablespace = wordcloud_tablespace;
 
 --
--- Name: lexemes; Type: TABLE; Schema: public; Owner: -; 
+-- Name: lexemes; Type: TABLE; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
 --
 
 CREATE TABLE public.lexemes (
@@ -1178,6 +1166,8 @@ CREATE SEQUENCE public.lexemes_id_seq
 ALTER SEQUENCE public.lexemes_id_seq OWNED BY public.lexemes.id;
 
 
+SET default_tablespace = '';
+
 --
 -- Name: media; Type: TABLE; Schema: public; Owner: -
 --
@@ -1187,6 +1177,16 @@ CREATE TABLE public.media (
     media_meta public.media_info,
     date_encountered timestamp without time zone DEFAULT now(),
     mtype "char"
+);
+
+
+--
+-- Name: media_posts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.media_posts (
+    post_id bigint,
+    media_id integer
 );
 
 
@@ -1250,6 +1250,34 @@ COMMENT ON COLUMN public.posts.ts_meta IS 'contains "tags, self, trail, images" 
 
 
 --
+-- Name: peek_index_progress; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.peek_index_progress AS
+ SELECT count(*) AS count,
+    aq.search_id,
+    aq.blog_uuid
+   FROM public.posts p,
+    public.active_queries aq
+  WHERE ((p.blog_uuid)::text = (aq.blog_uuid)::text)
+  GROUP BY aq.search_id, aq.blog_uuid;
+
+
+--
+-- Name: peek_update_progress; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.peek_update_progress AS
+ SELECT count(*) AS count,
+    aq.search_id,
+    aq.blog_uuid
+   FROM public.posts p,
+    public.active_queries aq
+  WHERE ((p.index_version < '3'::"char") AND (p.deleted = false) AND ((p.blog_uuid)::text = (aq.blog_uuid)::text))
+  GROUP BY aq.search_id, aq.blog_uuid;
+
+
+--
 -- Name: post_column_sizes; Type: VIEW; Schema: public; Owner: -
 --
 
@@ -1276,6 +1304,40 @@ CREATE TABLE public.posts_tags (
     tag_id integer NOT NULL,
     blog_uuid character varying(64) NOT NULL
 );
+
+
+--
+-- Name: self_api_hist; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.self_api_hist (
+    req_time timestamp without time zone NOT NULL,
+    response_code integer NOT NULL,
+    est_reavailable integer
+);
+
+
+--
+-- Name: TABLE self_api_hist; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.self_api_hist IS 'maintains information about the number of tumblr api requests this siikr node has made so as to help avoid donating more spare capacity than it can afford';
+
+
+--
+-- Name: self_api_summary; Type: MATERIALIZED VIEW; Schema: public; Owner: -
+--
+
+CREATE MATERIALIZED VIEW public.self_api_summary AS
+ SELECT ( SELECT count(*) AS count
+           FROM public.self_api_hist
+          WHERE (self_api_hist.req_time >= (now() - '01:00:00'::interval))) AS requests_this_hour,
+    ( SELECT count(*) AS count
+           FROM public.self_api_hist
+          WHERE (self_api_hist.req_time >= CURRENT_DATE)) AS requests_today,
+    ( SELECT (EXTRACT(epoch FROM (now() - (max(self_api_hist.req_time))::timestamp with time zone)) + (max(self_api_hist.est_reavailable))::numeric)
+           FROM public.self_api_hist) AS est_reavailable
+  WITH NO DATA;
 
 
 --
@@ -1383,7 +1445,7 @@ CREATE VIEW public.ugly_diskuse AS
    FROM ((pg_class c
      LEFT JOIN pg_namespace n ON ((n.oid = c.relnamespace)))
      LEFT JOIN pg_tablespace t ON ((c.reltablespace = t.oid)))
-  WHERE ((c.relkind = 'r'::"char") AND (n.nspname = 'public'::name) AND ((t.spcname IS NULL)));
+  WHERE ((c.relkind = 'r'::"char") AND (n.nspname = 'public'::name) AND ((t.spcname IS NULL) OR (t.spcname <> 'wordcloud_tablespace'::name)));
 
 
 --
@@ -1409,8 +1471,10 @@ CREATE TABLE public.users_encountered (
 );
 
 
+SET default_tablespace = wordcloud_tablespace;
+
 --
--- Name: wordclouded_blogs; Type: TABLE; Schema: public; Owner: -; 
+-- Name: wordclouded_blogs; Type: TABLE; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
 --
 
 CREATE TABLE public.wordclouded_blogs (
@@ -1453,6 +1517,9 @@ ALTER TABLE ONLY public.siikr_nodes ALTER COLUMN node_id SET DEFAULT nextval('pu
 --
 
 ALTER TABLE ONLY public.tags ALTER COLUMN tag_id SET DEFAULT nextval('public.tags_tag_id_seq'::regclass);
+
+
+SET default_tablespace = '';
 
 --
 -- Name: active_queries active_queries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
@@ -1517,8 +1584,11 @@ ALTER TABLE ONLY public.blogstats
 ALTER TABLE ONLY public.active_queries
     ADD CONSTRAINT constraint_name UNIQUE (query_text, query_params, blog_uuid);
 
+
+SET default_tablespace = wordcloud_tablespace;
+
 --
--- Name: delete_me_after delete_me_after_pkey; Type: CONSTRAINT; Schema: public; Owner: -; 
+-- Name: delete_me_after delete_me_after_pkey; Type: CONSTRAINT; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
 --
 
 ALTER TABLE ONLY public.delete_me_after
@@ -1526,14 +1596,15 @@ ALTER TABLE ONLY public.delete_me_after
 
 
 --
--- Name: lexeme_blogstats_english lexeme_blogstats_english_pkey; Type: CONSTRAINT; Schema: public; Owner: -;
+-- Name: lexeme_blogstats_english lexeme_blogstats_english_pkey; Type: CONSTRAINT; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
+--
 
 ALTER TABLE ONLY public.lexeme_blogstats_english
     ADD CONSTRAINT lexeme_blogstats_english_pkey PRIMARY KEY (blog_uuid, lexeme_id);
 
 
 --
--- Name: lexemes lexeme_unq; Type: CONSTRAINT; Schema: public; Owner: -;
+-- Name: lexemes lexeme_unq; Type: CONSTRAINT; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
 --
 
 ALTER TABLE ONLY public.lexemes
@@ -1541,12 +1612,14 @@ ALTER TABLE ONLY public.lexemes
 
 
 --
--- Name: lexemes lexemes_pkey; Type: CONSTRAINT; Schema: public; Owner: -; 
+-- Name: lexemes lexemes_pkey; Type: CONSTRAINT; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
 --
 
 ALTER TABLE ONLY public.lexemes
     ADD CONSTRAINT lexemes_pkey PRIMARY KEY (id);
 
+
+SET default_tablespace = '';
 
 --
 -- Name: media_posts media_posts_unique; Type: CONSTRAINT; Schema: public; Owner: -
@@ -1588,13 +1661,17 @@ ALTER TABLE ONLY public.posts_tags
     ADD CONSTRAINT posts_tags_pkey PRIMARY KEY (post_id, tag_id, blog_uuid);
 
 
+SET default_tablespace = wordcloud_tablespace;
+
 --
--- Name: selftext_blogstats_english selftext_blogstats_english_pkey; Type: CONSTRAINT; Schema: public; Owner: -; 
+-- Name: selftext_blogstats_english selftext_blogstats_english_pkey; Type: CONSTRAINT; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
 --
 
 ALTER TABLE ONLY public.selftext_blogstats_english
     ADD CONSTRAINT selftext_blogstats_english_pkey PRIMARY KEY (blog_uuid, lexeme_id);
 
+
+SET default_tablespace = '';
 
 --
 -- Name: siikr_nodes siikr_nodes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
@@ -1688,12 +1765,16 @@ CREATE INDEX blog_uuid_nodecache_idx ON public.cached_blog_node_map USING hash (
 CREATE INDEX cached_blog_node_map_blog_uuid_idx ON public.cached_blog_node_map USING hash (blog_uuid);
 
 
+SET default_tablespace = wordcloud_tablespace;
+
 --
--- Name: idx_blog_uuid; Type: INDEX; Schema: public; Owner: -;
+-- Name: idx_blog_uuid; Type: INDEX; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
 --
 
 CREATE INDEX idx_blog_uuid ON public.lexeme_blogstats_english USING hash (blog_uuid);
 
+
+SET default_tablespace = '';
 
 --
 -- Name: idx_blog_uuid_post_date; Type: INDEX; Schema: public; Owner: -
@@ -1717,29 +1798,36 @@ CREATE INDEX idx_hash_media_id ON public.media_posts USING hash (media_id);
 
 
 --
--- Name: idx_hash_post_id; Type: INDEX; Schema: public; Owner: -;
+-- Name: idx_hash_post_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_hash_post_id ON public.media_posts USING hash (post_id);
 
+
+SET default_tablespace = wordcloud_tablespace;
+
 --
--- Name: idx_lexeme_id; Type: INDEX; Schema: public; Owner: -; 
+-- Name: idx_lexeme_id; Type: INDEX; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
+--
 
 CREATE INDEX idx_lexeme_id ON public.lexeme_blogstats_english USING hash (lexeme_id);
 
 
 --
--- Name: idx_ndentries; Type: INDEX; Schema: public; Owner: -; 
+-- Name: idx_ndentries; Type: INDEX; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
 --
 
 CREATE INDEX idx_ndentries ON public.lexeme_blogstats_english USING btree (nentry);
 
 
 --
--- Name: idx_ndocs; Type: INDEX; Schema: public; Owner: -; 
+-- Name: idx_ndocs; Type: INDEX; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
 --
 
 CREATE INDEX idx_ndocs ON public.lexeme_blogstats_english USING btree (ndoc);
+
+
+SET default_tablespace = '';
 
 --
 -- Name: idx_posts_tags_blog_uuid; Type: INDEX; Schema: public; Owner: -
@@ -1789,12 +1877,17 @@ CREATE INDEX lbe_en_self_lexeme_id_hash ON public.lexeme_blogstats_en_self USING
 
 CREATE INDEX lbe_en_self_unuuid_hash ON public.lexeme_blogstats_en_self USING hash (unuuid);
 
+
+SET default_tablespace = wordcloud_tablespace;
+
 --
--- Name: lexeme_unq_idx; Type: INDEX; Schema: public; Owner: -; 
+-- Name: lexeme_unq_idx; Type: INDEX; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
 --
 
 CREATE INDEX lexeme_unq_idx ON public.lexemes USING hash (lexeme);
 
+
+SET default_tablespace = '';
 
 --
 -- Name: media_temp_media_meta_idx; Type: INDEX; Schema: public; Owner: -
@@ -1817,31 +1910,37 @@ CREATE INDEX post_id_1691300947621_index ON public.posts_tags USING btree (post_
 CREATE UNIQUE INDEX post_id_blog_uuid_1691301036952_index ON public.posts USING btree (post_id, blog_uuid);
 
 
+SET default_tablespace = wordcloud_tablespace;
+
 --
--- Name: selftext_blogstats_english_blog_uuid_idx; Type: INDEX; Schema: public; Owner: -;
+-- Name: selftext_blogstats_english_blog_uuid_idx; Type: INDEX; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
 --
 
 CREATE INDEX selftext_blogstats_english_blog_uuid_idx ON public.selftext_blogstats_english USING hash (blog_uuid);
 
 
 --
--- Name: selftext_blogstats_english_lexeme_id_idx; Type: INDEX; Schema: public; Owner: -;
+-- Name: selftext_blogstats_english_lexeme_id_idx; Type: INDEX; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
 --
 
 CREATE INDEX selftext_blogstats_english_lexeme_id_idx ON public.selftext_blogstats_english USING hash (lexeme_id);
 
 
 --
--- Name: selftext_blogstats_english_ndoc_idx; Type: INDEX; Schema: public; Owner: -;
+-- Name: selftext_blogstats_english_ndoc_idx; Type: INDEX; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
 --
 
 CREATE INDEX selftext_blogstats_english_ndoc_idx ON public.selftext_blogstats_english USING btree (ndoc);
 
 
 --
--- Name: selftext_blogstats_english_nentry_idx; Type: INDEX; Schema: public; Owner: -;
+-- Name: selftext_blogstats_english_nentry_idx; Type: INDEX; Schema: public; Owner: -; Tablespace: wordcloud_tablespace
+--
+
 CREATE INDEX selftext_blogstats_english_nentry_idx ON public.selftext_blogstats_english USING btree (nentry);
 
+
+SET default_tablespace = '';
 
 --
 -- Name: tag_id_1691505411923_index; Type: INDEX; Schema: public; Owner: -
@@ -1943,6 +2042,7 @@ ALTER TABLE ONLY public.media_posts
 ALTER TABLE ONLY public.lexeme_blogstats_english
     ADD CONSTRAINT lexeme_blogstats_english_blog_uuid_fkey FOREIGN KEY (blog_uuid) REFERENCES public.wordclouded_blogs(blog_uuid);
 
+
 --
 -- Name: posts posts_blog_uuid_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
@@ -1981,6 +2081,531 @@ ALTER TABLE ONLY public.lexeme_blogstats_en_trail
 
 ALTER TABLE ONLY public.lexeme_blogstats_en_self
     ADD CONSTRAINT unuuid_en_self FOREIGN KEY (unuuid) REFERENCES public.analyzed_blogs(unuuid);
+
+
+--
+-- Name: FUNCTION vector_in(cstring, oid, integer); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.vector_in(cstring, oid, integer) TO siikrweb;
+
+
+--
+-- Name: FUNCTION vector_out(public.vector); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.vector_out(public.vector) TO siikrweb;
+
+
+--
+-- Name: FUNCTION vector_recv(internal, oid, integer); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.vector_recv(internal, oid, integer) TO siikrweb;
+
+
+--
+-- Name: FUNCTION vector_send(public.vector); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.vector_send(public.vector) TO siikrweb;
+
+
+--
+-- Name: FUNCTION vector_typmod_in(cstring[]); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.vector_typmod_in(cstring[]) TO siikrweb;
+
+
+--
+-- Name: FUNCTION array_to_vector(real[], integer, boolean); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.array_to_vector(real[], integer, boolean) TO siikrweb;
+
+
+--
+-- Name: FUNCTION array_to_vector(double precision[], integer, boolean); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.array_to_vector(double precision[], integer, boolean) TO siikrweb;
+
+
+--
+-- Name: FUNCTION array_to_vector(integer[], integer, boolean); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.array_to_vector(integer[], integer, boolean) TO siikrweb;
+
+
+--
+-- Name: FUNCTION array_to_vector(numeric[], integer, boolean); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.array_to_vector(numeric[], integer, boolean) TO siikrweb;
+
+
+--
+-- Name: FUNCTION vector_to_float4(public.vector, integer, boolean); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.vector_to_float4(public.vector, integer, boolean) TO siikrweb;
+
+
+--
+-- Name: FUNCTION vector(public.vector, integer, boolean); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.vector(public.vector, integer, boolean) TO siikrweb;
+
+
+--
+-- Name: FUNCTION cosine_distance(public.vector, public.vector); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.cosine_distance(public.vector, public.vector) TO siikrweb;
+
+
+--
+-- Name: FUNCTION inner_product(public.vector, public.vector); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.inner_product(public.vector, public.vector) TO siikrweb;
+
+
+--
+-- Name: FUNCTION ivfflathandler(internal); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.ivfflathandler(internal) TO siikrweb;
+
+
+--
+-- Name: FUNCTION l2_distance(public.vector, public.vector); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.l2_distance(public.vector, public.vector) TO siikrweb;
+
+
+--
+-- Name: FUNCTION vector_accum(double precision[], public.vector); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.vector_accum(double precision[], public.vector) TO siikrweb;
+
+
+--
+-- Name: FUNCTION vector_add(public.vector, public.vector); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.vector_add(public.vector, public.vector) TO siikrweb;
+
+
+--
+-- Name: FUNCTION vector_avg(double precision[]); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.vector_avg(double precision[]) TO siikrweb;
+
+
+--
+-- Name: FUNCTION vector_cmp(public.vector, public.vector); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.vector_cmp(public.vector, public.vector) TO siikrweb;
+
+
+--
+-- Name: FUNCTION vector_combine(double precision[], double precision[]); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.vector_combine(double precision[], double precision[]) TO siikrweb;
+
+
+--
+-- Name: FUNCTION vector_dims(public.vector); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.vector_dims(public.vector) TO siikrweb;
+
+
+--
+-- Name: FUNCTION vector_eq(public.vector, public.vector); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.vector_eq(public.vector, public.vector) TO siikrweb;
+
+
+--
+-- Name: FUNCTION vector_ge(public.vector, public.vector); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.vector_ge(public.vector, public.vector) TO siikrweb;
+
+
+--
+-- Name: FUNCTION vector_gt(public.vector, public.vector); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.vector_gt(public.vector, public.vector) TO siikrweb;
+
+
+--
+-- Name: FUNCTION vector_l2_squared_distance(public.vector, public.vector); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.vector_l2_squared_distance(public.vector, public.vector) TO siikrweb;
+
+
+--
+-- Name: FUNCTION vector_le(public.vector, public.vector); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.vector_le(public.vector, public.vector) TO siikrweb;
+
+
+--
+-- Name: FUNCTION vector_lt(public.vector, public.vector); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.vector_lt(public.vector, public.vector) TO siikrweb;
+
+
+--
+-- Name: FUNCTION vector_ne(public.vector, public.vector); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.vector_ne(public.vector, public.vector) TO siikrweb;
+
+
+--
+-- Name: FUNCTION vector_negative_inner_product(public.vector, public.vector); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.vector_negative_inner_product(public.vector, public.vector) TO siikrweb;
+
+
+--
+-- Name: FUNCTION vector_norm(public.vector); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.vector_norm(public.vector) TO siikrweb;
+
+
+--
+-- Name: FUNCTION vector_spherical_distance(public.vector, public.vector); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.vector_spherical_distance(public.vector, public.vector) TO siikrweb;
+
+
+--
+-- Name: FUNCTION vector_sub(public.vector, public.vector); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.vector_sub(public.vector, public.vector) TO siikrweb;
+
+
+--
+-- Name: FUNCTION avg(public.vector); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.avg(public.vector) TO siikrweb;
+
+
+--
+-- Name: TABLE active_queries; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.active_queries TO siikrweb;
+
+
+--
+-- Name: SEQUENCE active_queries_search_id_seq; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON SEQUENCE public.active_queries_search_id_seq TO siikrweb;
+
+
+--
+-- Name: TABLE analyzed_blogs; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.analyzed_blogs TO siikrweb;
+
+
+--
+-- Name: SEQUENCE analyzed_blogs_unuuid_seq; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON SEQUENCE public.analyzed_blogs_unuuid_seq TO siikrweb;
+
+
+--
+-- Name: TABLE archiver_leases; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.archiver_leases TO siikrweb;
+
+
+--
+-- Name: TABLE blog_node_map; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.blog_node_map TO siikrweb;
+
+
+--
+-- Name: TABLE blogstats; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.blogstats TO siikrweb;
+
+
+--
+-- Name: TABLE cached_blog_node_map; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.cached_blog_node_map TO siikrweb;
+
+
+--
+-- Name: TABLE debug_active_queries; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.debug_active_queries TO siikrweb;
+
+
+--
+-- Name: TABLE debug_frozen_queries; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.debug_frozen_queries TO siikrweb;
+
+
+--
+-- Name: TABLE delete_me_after; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.delete_me_after TO siikrweb;
+
+
+--
+-- Name: TABLE disk_use_pretty; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.disk_use_pretty TO siikrweb;
+
+
+--
+-- Name: SEQUENCE images_image_id_seq; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON SEQUENCE public.images_image_id_seq TO siikrweb;
+
+
+--
+-- Name: SEQUENCE images_posts_id_seq; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON SEQUENCE public.images_posts_id_seq TO siikrweb;
+
+
+--
+-- Name: TABLE index_use; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.index_use TO siikrweb;
+
+
+--
+-- Name: TABLE index_use_toast; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.index_use_toast TO siikrweb;
+
+
+--
+-- Name: TABLE lexeme_blogstats_en_self; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.lexeme_blogstats_en_self TO siikrweb;
+
+
+--
+-- Name: TABLE lexeme_blogstats_en_trail; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.lexeme_blogstats_en_trail TO siikrweb;
+
+
+--
+-- Name: TABLE lexeme_blogstats_english; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.lexeme_blogstats_english TO siikrweb;
+
+
+--
+-- Name: TABLE lexemes; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.lexemes TO siikrweb;
+
+
+--
+-- Name: SEQUENCE lexemes_id_seq; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON SEQUENCE public.lexemes_id_seq TO siikrweb;
+
+
+--
+-- Name: TABLE media; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.media TO siikrweb;
+
+
+--
+-- Name: TABLE media_posts; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.media_posts TO siikrweb;
+
+
+--
+-- Name: TABLE peek_bl_stats; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.peek_bl_stats TO siikrweb;
+
+
+--
+-- Name: TABLE posts; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.posts TO siikrweb;
+
+
+--
+-- Name: TABLE peek_index_progress; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.peek_index_progress TO siikrweb;
+
+
+--
+-- Name: TABLE peek_update_progress; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.peek_update_progress TO siikrweb;
+
+
+--
+-- Name: TABLE post_column_sizes; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.post_column_sizes TO siikrweb;
+
+
+--
+-- Name: TABLE posts_tags; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.posts_tags TO siikrweb;
+
+
+--
+-- Name: TABLE self_api_hist; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.self_api_hist TO siikrweb;
+
+
+--
+-- Name: TABLE self_api_summary; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.self_api_summary TO siikrweb;
+
+
+--
+-- Name: TABLE selftext_blogstats_english; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.selftext_blogstats_english TO siikrweb;
+
+
+--
+-- Name: TABLE siikr_nodes; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.siikr_nodes TO siikrweb;
+
+
+--
+-- Name: SEQUENCE siikr_nodes_node_id_seq; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON SEQUENCE public.siikr_nodes_node_id_seq TO siikrweb;
+
+
+--
+-- Name: TABLE tags; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.tags TO siikrweb;
+
+
+--
+-- Name: SEQUENCE tags_tag_id_seq; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON SEQUENCE public.tags_tag_id_seq TO siikrweb;
+
+
+--
+-- Name: TABLE ugly_diskuse; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.ugly_diskuse TO siikrweb;
+
+
+--
+-- Name: SEQUENCE update_counter_seq; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON SEQUENCE public.update_counter_seq TO siikrweb;
+
+
+--
+-- Name: TABLE users_encountered; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.users_encountered TO siikrweb;
+
+
+--
+-- Name: TABLE wordclouded_blogs; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.wordclouded_blogs TO siikrweb;
+
+
+--
+-- Name: DEFAULT PRIVILEGES FOR SEQUENCES; Type: DEFAULT ACL; Schema: public; Owner: -
+--
+
+ALTER DEFAULT PRIVILEGES FOR ROLE eron IN SCHEMA public GRANT ALL ON SEQUENCES  TO siikrweb;
+
+
+--
+-- Name: DEFAULT PRIVILEGES FOR TABLES; Type: DEFAULT ACL; Schema: public; Owner: -
+--
+
+ALTER DEFAULT PRIVILEGES FOR ROLE eron IN SCHEMA public GRANT ALL ON TABLES  TO siikrweb;
 
 
 --
