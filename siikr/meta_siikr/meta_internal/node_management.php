@@ -43,9 +43,10 @@ $upsert_blog_nodemap_stats = $db->prepare(
 
 $update_nodeStats = $db->prepare(
     "UPDATE siikr_nodes SET
-        last_pinged = now(),
-        free_space_mb = :free_space_mb
-        ,
+        last_pinged_ourtime = now(),
+        last_pinged_nodetime = :node_ping_time,
+        free_space_mb = :free_space_mb,
+        estimated_calls_remaining = :estimated_calls_remaining,
         reliability = LEAST(reliability, :reliability)
     WHERE node_id = :node_id"
 );
@@ -73,7 +74,9 @@ function updateNodeStats($node) {
     $update_nodeStats->exec([
         "node_id" => $node->node_id, 
         "free_space_mb" => $node->free_space_mb,
-        "reliability" => $node->reliability
+        "reliability" => $node->reliability,
+        "estimated_calls_remaining" => $node->estimated_calls_remaining,
+        "node_ping_time" => $node->time_right_now
     ]);
 }
 
@@ -154,7 +157,7 @@ function askAllNodes($blog_uuid, $blog_info=null) {
                 $node->reliability_boost +=0.06125;
                 $available_nodes[] = $node;
             }
-            $node->free_space_mb = $json_result["free_space_mb"];
+            foreach($json_result as $k => $v) if($k != "blogstat_info") $node->$k = $v;
             updateNodeStats($node);
             if($json_result["have_blog"] && isset($json_result["blogstat_info"])) {
                 foreach($json_result["blogstat_info"] as $k => $v) {
@@ -202,7 +205,7 @@ function cacheBestNode($blog_uuid, $node) {
     ]);    
 }
 
-$cached_prep = $db->prepare("SELECT sn.* FROM cached_blog_node_map cbnm, siikr_nodes sn WHERE cbnm.blog_uuid = :blog_uuid AND sn.node_id = cbnm.node_id" );
+$cached_prep = $db->prepare("SELECT sn.* FROM cached_blog_node_map cbnm, siikr_nodes sn WHERE cbnm.blog_uuid = :blog_uuid" );
 $known_prep = $db->prepare(
     "SELECT
         bnm.success,
@@ -211,7 +214,8 @@ $known_prep = $db->prepare(
         bnm.indexed_posts, 
         sn.node_url,
         sn.free_space_mb,
-        EXTRACT(epoch FROM last_pinged)::INT as last_pinged,
+        EXTRACT(epoch FROM last_pinged_ourtime)::INT as last_pinged_ourtime,
+        EXTRACT(epoch FROM last_pinged_nodetime)::INT as last_pinged_nodetime,
         sn.reliability
     FROM blog_node_map bnm, siikr_nodes sn 
     WHERE bnm.blog_uuid = :blog_uuid AND bnm.node_id = sn.node_id");
@@ -231,6 +235,7 @@ function findBestKnownNode($blog_uuid, $blog_info=null) {
         $known_hosts = $known_prep->exec(["blog_uuid"=>$blog_uuid])->fetchAll(PDO::FETCH_OBJ);
         if($known_hosts) {
             if(count($known_hosts) == 1) {
+                
                 return $known_hosts[0];
             } 
             if(count($known_hosts) > 1) {
@@ -275,13 +280,13 @@ function tieBreaker($hostList, $blog_uuid, $blogInfo=null) {
         $score = 1.0+((float)$host->reliabiltiy/10.0);
         if(property_exists($host, "indexed_post_count")) { 
             $posts_indexed = 1+(float)($host->indexed_post_count ?? 0);
-            $posts_existing = (isset($blog_info) ? (float)$blogInfo->posts : 1);
-            $score *= $posts_indexed / $posts_existing; 
-            $estimated_calls_required = $posts_existing - $posts_indexed;
+            $posts_existing = (isset($blogInfo) ? (float)$blogInfo->posts : 1);
+            $score *= (float)$posts_indexed / (float)$posts_existing; 
+            $estimated_calls_required = (float)($posts_existing - $posts_indexed);
             //prefer not to use hosts that don't have very many calls left
-            $score *= $host->estimated_calls_remaining/($estimated_calls_required*10);
+            $score *= $host->estimated_calls_remaining/($estimated_calls_required*10.0);
         }
-        $score *= $host->free_space_mb;
+        $score *= (float)$host->free_space_mb;
         $host->score = $score;
         $viableCandidates[] = $host;
     }
