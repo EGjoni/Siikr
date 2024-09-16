@@ -174,13 +174,13 @@ CREATE FUNCTION public.delete_blog(target_blog_uuid character varying) RETURNS v
 DECLARE
     deleted_count INTEGER;
 BEGIN
-    -- Delete related entries in images_posts and posts_tags by joining with posts
-    DELETE FROM images_posts
+    -- Delete related entries in media_posts and posts_tags by joining with posts
+    DELETE FROM media_posts
     USING posts
-    WHERE posts.post_id = images_posts.post_id
+    WHERE posts.post_id = media_posts.post_id
     AND posts.blog_uuid = target_blog_uuid;
     GET DIAGNOSTICS deleted_count = ROW_COUNT;
-    RAISE NOTICE 'Deleted % images_posts entries.', deleted_count;
+    RAISE NOTICE 'Deleted % media_posts entries.', deleted_count;
     
     DELETE FROM posts_tags
     USING posts
@@ -1207,6 +1207,56 @@ CREATE VIEW public.peek_bl_stats AS
 
 
 --
+-- Name: siikr_nodes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.siikr_nodes (
+    node_id integer NOT NULL,
+    node_url text NOT NULL,
+    free_space_mb double precision,
+    last_pinged_ourtime timestamp without time zone,
+    reliability double precision DEFAULT 10,
+    estimated_calls_remaining integer DEFAULT 5000,
+    last_pinged_nodetime timestamp without time zone DEFAULT now()
+);
+
+
+--
+-- Name: peek_bnm; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.peek_bnm AS
+ SELECT public.name_of((bnm.blog_uuid)::character varying) AS name_of,
+    bnm.node_id,
+    bnm.blog_uuid,
+    bnm.indexed_posts,
+    bnm.is_indexing,
+    bnm.success,
+    bnm.last_index_count_modification_time,
+    sn.node_url
+   FROM public.blog_node_map bnm,
+    public.siikr_nodes sn
+  WHERE (sn.node_id = bnm.node_id)
+  ORDER BY bnm.last_index_count_modification_time DESC;
+
+
+--
+-- Name: peek_cbnm; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.peek_cbnm AS
+ SELECT public.name_of((cbnm.blog_uuid)::character varying) AS name_of,
+    cbnm.blog_uuid,
+    cbnm.node_id,
+    cbnm.established,
+    cbnm.last_interaction
+   FROM public.cached_blog_node_map cbnm,
+    public.siikr_nodes sn
+  WHERE (sn.node_id = cbnm.node_id)
+  ORDER BY cbnm.last_interaction DESC;
+
+
+--
 -- Name: posts; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1366,19 +1416,6 @@ COMMENT ON COLUMN public.selftext_blogstats_english.blog_freq IS 'number of time
 --
 
 COMMENT ON COLUMN public.selftext_blogstats_english.post_freq IS 'number of posts word has appeared in on this blog / total number of posts in the blog';
-
-
---
--- Name: siikr_nodes; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.siikr_nodes (
-    node_id integer NOT NULL,
-    node_url text NOT NULL,
-    free_space_mb double precision,
-    last_pinged timestamp without time zone,
-    reliability double precision DEFAULT 10
-);
 
 
 --
@@ -1894,6 +1931,13 @@ SET default_tablespace = '';
 --
 
 CREATE INDEX media_temp_media_meta_idx ON public.media USING hash (media_meta);
+
+
+--
+-- Name: post_deleted; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX post_deleted ON public.posts USING btree (deleted);
 
 
 --
@@ -2483,6 +2527,27 @@ GRANT ALL ON TABLE public.peek_bl_stats TO siikrweb;
 
 
 --
+-- Name: TABLE siikr_nodes; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.siikr_nodes TO siikrweb;
+
+
+--
+-- Name: TABLE peek_bnm; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.peek_bnm TO siikrweb;
+
+
+--
+-- Name: TABLE peek_cbnm; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.peek_cbnm TO siikrweb;
+
+
+--
 -- Name: TABLE posts; Type: ACL; Schema: public; Owner: -
 --
 
@@ -2536,13 +2601,6 @@ GRANT ALL ON TABLE public.self_api_summary TO siikrweb;
 --
 
 GRANT ALL ON TABLE public.selftext_blogstats_english TO siikrweb;
-
-
---
--- Name: TABLE siikr_nodes; Type: ACL; Schema: public; Owner: -
---
-
-GRANT ALL ON TABLE public.siikr_nodes TO siikrweb;
 
 
 --

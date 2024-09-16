@@ -30,8 +30,8 @@ function getHitRate($post, $isReblog) {
         so we have to approximate by note range. 
         Included though is a branch just in case they fix the API*/
         
-        if($isReblog && count($post->trail)>0 && $post->trail[0]?->post?->timestamp < $range_min) {
-            $range_min = min($range_min, $post->trail[0]?->post?->timestamp);
+        if($isReblog && count($post->trail)>0 && ($post->trail[0]?->post?->timestamp ?? ($range_min+1)) < $range_min) {
+            $range_min = min($range_min, $post->trail[0]?->post?->timestamp ?? $range_min);
         } else if(property_exists($post, "notes") && count($post?->notes)>0) {
             $note_sample_count = count($post?->notes);
             $range_min = $post->notes[$note_sample_count-1]?->timestamp;
@@ -163,7 +163,7 @@ function extract_blocks_from_content($subpost, &$soFar, $mode=0b01) {
     foreach($subpost->layout as $lay_item) {
         if($lay_item->type == "ask") {
             $soFar["has_ask"] |= $mode;
-            if($lay_item?->attribution?->blog?->name != null) {
+            if(property_exists($lay_item, "attribution") && $lay_item->attribution?->blog?->name != null) {
                 $asking_blog_info = $lay_item?->attribution?->blog;
                 if(property_exists($asking_blog_info, "name")) {
                     //$soFar["mentions"][$asking_blog_info->name] = $asking_blog_info;
