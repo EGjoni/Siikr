@@ -67,7 +67,7 @@ if($last_stat_obj->response_code == 429) {
 }
 
 
-$result["estimated_calls_remaining"] = $est_calls_remaining - ($pending_posts/50);
+$result["estimated_calls_remaining"] = (int)($est_calls_remaining - ($pending_posts/50));
 
 
 if($blog_uuid != null) {

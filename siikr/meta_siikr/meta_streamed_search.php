@@ -28,7 +28,7 @@ function initSearch($username, $forward_params) {
         if($usenode != false) {
             cacheBestNode($blog_info->blog_uuid, $usenode);
             forwardRequest($forward_params, 'streamed_search.php', $usenode);
-            askAllNodes($blog_info->blog_uuid, $blog_info); //update nodestats since we're here anyway
+            askAllNodes($blog_info->blog_uuid, $blog_info); //implicitly updates nodestats, doing it since we're here anyway
             cleanStaleCacheEntries();
         }
     } catch ( Exception $e) {

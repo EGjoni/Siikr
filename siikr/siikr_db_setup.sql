@@ -885,7 +885,7 @@ CREATE TABLE public.blogstats (
 
 CREATE TABLE public.cached_blog_node_map (
     blog_uuid text NOT NULL,
-    node_id integer,
+    node_id integer NOT NULL,
     established timestamp without time zone,
     last_interaction timestamp without time zone
 );
@@ -1204,6 +1204,25 @@ CREATE VIEW public.peek_bl_stats AS
     blogstats.index_request_count AS idx_req_ct,
     blogstats.time_last_indexed
    FROM public.blogstats;
+
+
+--
+-- Name: peek_archiver_leases; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.peek_archiver_leases AS
+ SELECT public.name_of(al.blog_uuid) AS name_of,
+    pbl.blog_uuid,
+    pbl.blog_name,
+    pbl.indexed_posts,
+    pbl.tumblr_posts_reported,
+    pbl.success,
+    pbl.indexing,
+    pbl.idx_req_ct,
+    pbl.time_last_indexed
+   FROM public.archiver_leases al,
+    public.peek_bl_stats pbl
+  WHERE ((pbl.blog_uuid)::text = (al.blog_uuid)::text);
 
 
 --
@@ -2524,6 +2543,13 @@ GRANT ALL ON TABLE public.media_posts TO siikrweb;
 --
 
 GRANT ALL ON TABLE public.peek_bl_stats TO siikrweb;
+
+
+--
+-- Name: TABLE peek_archiver_leases; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public.peek_archiver_leases TO siikrweb;
 
 
 --

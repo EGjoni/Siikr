@@ -44,7 +44,7 @@ $upsert_blog_nodemap_stats = $db->prepare(
 $update_nodeStats = $db->prepare(
     "UPDATE siikr_nodes SET
         last_pinged_ourtime = now(),
-        last_pinged_nodetime = :node_ping_time,
+        last_pinged_nodetime = to_timestamp(:node_ping_time),
         free_space_mb = :free_space_mb,
         estimated_calls_remaining = :estimated_calls_remaining,
         reliability = LEAST(reliability, :reliability)
@@ -75,7 +75,7 @@ function updateNodeStats($node) {
         "node_id" => $node->node_id, 
         "free_space_mb" => $node->free_space_mb,
         "reliability" => $node->reliability,
-        "estimated_calls_remaining" => $node->estimated_calls_remaining,
+        "estimated_calls_remaining" => (int)$node->estimated_calls_remaining,
         "node_ping_time" => $node->time_right_now
     ]);
 }
@@ -205,18 +205,21 @@ function cacheBestNode($blog_uuid, $node) {
     ]);    
 }
 
-$cached_prep = $db->prepare("SELECT sn.* FROM cached_blog_node_map cbnm, siikr_nodes sn WHERE cbnm.blog_uuid = :blog_uuid" );
+$cached_prep = $db->prepare("SELECT sn.* FROM cached_blog_node_map cbnm, siikr_nodes sn 
+    WHERE cbnm.blog_uuid = :blog_uuid AND sn.node_id = cbnm.node_id");
 $known_prep = $db->prepare(
     "SELECT
         bnm.success,
         bnm.is_indexing,
         EXTRACT(epoch FROM bnm.last_index_count_modification_time)::INT as last_index_count_modification_time,
-        bnm.indexed_posts, 
+        bnm.indexed_posts as indexed_post_count, 
         sn.node_url,
         sn.free_space_mb,
         EXTRACT(epoch FROM last_pinged_ourtime)::INT as last_pinged_ourtime,
         EXTRACT(epoch FROM last_pinged_nodetime)::INT as last_pinged_nodetime,
-        sn.reliability
+        sn.estimated_calls_remaining,
+        sn.reliability,
+        sn.node_id
     FROM blog_node_map bnm, siikr_nodes sn 
     WHERE bnm.blog_uuid = :blog_uuid AND bnm.node_id = sn.node_id");
 
@@ -264,7 +267,7 @@ function tieBreaker($hostList, $blog_uuid, $blogInfo=null) {
             continue; //spmethine has gone wrong to get a score this low
         }
         if(property_exists($host, "is_indexing")) {
-            if(!$host->is_indexing && !$host->sucess) { //if the host failed, stop relying on it
+            if(!$host->is_indexing && !$host->success) { //if the host failed, stop relying on it
                 $checkinQueue[] = $host; 
                 continue;
             } else if ($host->is_indexing 
@@ -282,9 +285,9 @@ function tieBreaker($hostList, $blog_uuid, $blogInfo=null) {
             $posts_indexed = 1+(float)($host->indexed_post_count ?? 0);
             $posts_existing = (isset($blogInfo) ? (float)$blogInfo->posts : 1);
             $score *= (float)$posts_indexed / (float)$posts_existing; 
-            $estimated_calls_required = (float)($posts_existing - $posts_indexed);
+            $estimated_calls_required = 0.1+((float)($posts_existing - $posts_indexed)/50.0);
             //prefer not to use hosts that don't have very many calls left
-            $score *= $host->estimated_calls_remaining/($estimated_calls_required*10.0);
+            $score *= $host->estimated_calls_remaining/($estimated_calls_required);
         }
         $score *= (float)$host->free_space_mb;
         $host->score = $score;
