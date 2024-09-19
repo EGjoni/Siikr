@@ -1,7 +1,7 @@
 <?php
 $no_config = true; 
 try {
-    require_once 'auth/config.php';
+    include_once 'auth/config.php';
     $no_config = false;
 } catch (Exception $e) {
     require_once 'index_local.php';
