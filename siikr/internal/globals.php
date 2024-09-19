@@ -1,4 +1,9 @@
 <?php
+$archiver_version = '3';
+$hub_url = "https://siikr.giftedapprentice.com/meta_siikr/";
+$deletion_rate = 0.994; //approximate, we estimate users are sufficiently ashamed of roughly 0.5% of the things they say to warrant deletion. It would be expensive to determine the exact number on a case by case basis, so this estimate is derived from the average deletion rate on a sample of 200 users. The variance is actually quite high per user but ultimately this number gets divided by 50, so most of the variance gets swept under the 1.5 orders of magnitude.
+
+
 $possible_encodings =['UTF-8', 'ISO-8859-1', 'ASCII', 'JIS', 'EUC-JP', 'SJIS'];
 function ensure_valid_string($string) {
     global $possible_encodings;
@@ -581,8 +586,10 @@ function nameCorrespondenceObj($db, $userProvidedName) {
 *   4b. the blog_uuid tumblr reports is in my table (one of my existing users has abandoned their name, and another of my existing users has adopted it)
 * 6. I have been in hell this entire time.
  */
-function resolve_uuid($db, $blogNameFromUser, $blogUuidFromTumblr, $blogNameFromTumblr) {
+function resolve_uuid($db, $blogNameFromUser, $blogInfoFromTumblr, $blogNameFromTumblr) {
     $return_result = (object)[];
+    $blogUuidFromTumblr = $blogInfoFromTumblr->uuid; 
+    $tumblr_posts_reported = $blogInfoFromTumblr->total_posts_reported;
     try {
         $stmt = $db->prepare("SELECT blog_uuid FROM blogstats WHERE blog_name = :blog_name");
         $stmt->execute(['blog_name' => $blogNameFromUser]);
@@ -594,17 +601,24 @@ function resolve_uuid($db, $blogNameFromUser, $blogUuidFromTumblr, $blogNameFrom
         $db->beginTransaction();
         if (!$existingBlogNameForUuid && !$existingBlogUuidForName) {
             // Situation 1
-            $stmt = $db->prepare("INSERT INTO blogstats (blog_name, blog_uuid) 
-                            VALUES (:blog_name, :blog_uuid)");
-            $stmt->execute(['blog_name' => $blogNameFromTumblr, 'blog_uuid' => $blogUuidFromTumblr]);
+            $stmt = $db->prepare("INSERT INTO blogstats (blog_name, blog_uuid, serverside_posts_reported) 
+                            VALUES (:blog_name, :blog_uuid, :tumblr_posts_reported)");
+            $stmt->execute([
+                'blog_name' => $blogNameFromTumblr, 
+                'blog_uuid' => $blogUuidFromTumblr, 
+                "tumblr_posts_reported" => $tumblr_posts_reported]);
             $return_result->name = $blogNameFromTumblr;
             $return_result->uuid = $blogUuidFromTumblr;
         } elseif ($existingBlogNameForUuid && !$existingBlogUuidForName) {
             // Situation 2
             $stmt = $db->prepare("UPDATE blogstats 
-                        SET blog_name = :blog_name 
+                        SET blog_name = :blog_name,
+                            serverside_posts_reported = :tumblr_posts_reported
                         WHERE blog_uuid = :blog_uuid");
-            $stmt->execute(['blog_name' => $blogNameFromTumblr, 'blog_uuid' => $blogUuidFromTumblr]);
+            $stmt->execute([
+                'blog_name' => $blogNameFromTumblr, 
+                'blog_uuid' => $blogUuidFromTumblr, 
+                "tumblr_posts_reported" => $tumblr_posts_reported]);
             $return_result->name = $blogNameFromTumblr;
             $return_result->uuid = $blogUuidFromTumblr;
         } elseif ($existingBlogUuidForName == $blogUuidFromTumblr) {
@@ -619,7 +633,10 @@ function resolve_uuid($db, $blogNameFromUser, $blogUuidFromTumblr, $blogNameFrom
             }
             $new_blogInfo = $new_blogname_info->$response->$blog;
             $new_name = $new_blogInfo->name;
-            $change_name = $db->prepare("UPDATE blogstats SET blog_name = :new_name WHERE blog_uuid = :blog_uuid")->exec(["new_name"=>$new_name, "blog_uuid"=>$blog_uuid]);
+            $change_name = $db->prepare("UPDATE blogstats 
+                SET blog_name = :new_name,
+                    serverside_posts_reported = :tumblr_posts_reported 
+                WHERE blog_uuid = :blog_uuid")->exec(["new_name"=>$new_name, "blog_uuid"=>$blog_uuid]);
             $return_result->uuid = $existingBlogUuidForName;
             $return_result->name = $new_name; 
         } else {
@@ -631,8 +648,12 @@ function resolve_uuid($db, $blogNameFromUser, $blogUuidFromTumblr, $blogNameFrom
                 $stmt->execute(['blog_uuid' => $existingBlogUuidForName, 'uuid_end' => $uuid_end]);
 
                 // Insert a new entry for the new blog_uuid and blog_name.
-                $stmt = $db->prepare("INSERT INTO blogstats (blog_name, blog_uuid) VALUES (:blog_name, :blog_uuid)");
-                $stmt->execute(['blog_name' => $blogNameFromTumblr, 'blog_uuid' => $blogUuidFromTumblr]);
+                $stmt = $db->prepare("INSERT INTO blogstats (blog_name, blog_uuid, serverside_posts_reported) 
+                            VALUES (:blog_name, :blog_uuid, :tumblr_posts_reported)");
+                $stmt->execute([
+                    'blog_name' => $blogNameFromTumblr, 
+                    'blog_uuid' => $blogUuidFromTumblr, 
+                    "tumblr_posts_reported" => $tumblr_posts_reported]);
                 $return_result->name = $blogNameFromTumblr;
                 $return_result->uuid = $blogUuidFromTumblr;
             } else {
@@ -641,8 +662,14 @@ function resolve_uuid($db, $blogNameFromUser, $blogUuidFromTumblr, $blogNameFrom
                 $stmt = $db->prepare("UPDATE blogstats SET blog_name = CONCAT(blog_name, '_archfrom_', :uuid_end::text) WHERE blog_uuid = :old_blog_uuid");
                 $stmt->execute(['old_blog_uuid' => $existingBlogUuidForName, 'uuid_end' => $uuid_end]);
 
-                $stmt = $db->prepare("UPDATE blogstats SET blog_name = :blog_name WHERE blog_uuid = :blog_uuid");
-                $stmt->execute(['blog_name' => $blogNameFromTumblr, 'blog_uuid' => $blogUuidFromTumblr]);
+                $stmt = $db->prepare("UPDATE blogstats 
+                    SET blog_name = :blog_name,
+                        serverside_posts_reported = :tumblr_posts_reported 
+                    WHERE blog_uuid = :blog_uuid");
+                $stmt->execute([
+                    'blog_name' => $blogNameFromTumblr, 
+                    'blog_uuid' => $blogUuidFromTumblr, 
+                    "tumblr_posts_reported" => $tumblr_posts_reported]);
                 $return_result->name = $blogNameFromTumblr;
                 $return_result->uuid = $blogUuidFromTumblr;
             }
@@ -660,12 +687,12 @@ function resolve_uuid($db, $blogNameFromUser, $blogUuidFromTumblr, $blogNameFrom
 /**checks if indexing the provided blog is likely to result in a full disk. 
 * @return true if there is sufficient room for the blog, false if indexing the blog might result in running out disk space
 */
-function ensureSpace($db, $db_blogInfo, $server_blog_info) {
+function ensureSpace($db, $db_blogInfo) {
 	global $db_disk;
 	global $db_min_disk_headroom;
     $blog_uuid = $db_blogInfo->blog_uuid;
-	$indexed_post_count = min($server_blog_info->total_posts, $db_blogInfo->indexed_post_count);
-	$posts_anticipated = $server_blog_info->total_posts - $indexed_post_count;
+	$indexed_post_count = min($db_blogInfo->serverside_posts_reported, $db_blogInfo->indexed_post_count);
+	$posts_anticipated = $server_blog_info->serverside_posts_reported - $indexed_post_count;
 	$averagePostSize = 3300;
 	$anticipatedSpaceRequired = $averagePostSize * $posts_anticipated;
     $other_anticipated_posts = $db->prepare("SELECT COALESCE(SUM(b.serverside_posts_reported - LEAST(b.indexed_post_count, b.serverside_posts_reported)), 0) 

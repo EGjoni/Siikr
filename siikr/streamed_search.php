@@ -10,6 +10,10 @@ $limit = $_GET["limit"];
 $init_stride = 15;
 $MAX_LIMIT = 99999;
 $stride = 100;
+$supplied_info = file_get_contents('php://input');
+if($supplied_info != null) {
+    $supplied_info = json_decode($supplied_info);
+}
 $blog_info = null;
 $username = explode(".", $_GET["username"])[0];
 $raw_query = pg_escape_string($_GET["query"]."");
@@ -36,21 +40,26 @@ function beginSearch($db) {
     global $raw_query;
     global $search_params;
     global $sort_mode;
+    global $supplied_info;
     
     $is_insurance_check = $_GET["isInsuranceCheck"];
     
     //$parsed = parseParams($search_params)
     $parser = new Parser('simple'); //fancy new abstract syntax tree parse
-    $query = "$raw_query";//$parser->parse($raw_query);
+    $query = "$raw_query";//$parser->parse($raw_query)
     $blog_info = (object)[];
     try {
         $response = call_tumblr($username, "info", [], true);
         try {
-            $error_string = handleError($response);
-            $blog_info = $response->response->blog;
+            if($supplied_info == null) {
+                $error_string = handleError($response);
+                $blog_info = $response->response->blog;
+            } else {
+                $blog_info = $supplied_info;
+            }
             $blog_info->blog_uuid = $blog_info->uuid;
             $blog_info->blog_name = $blog_info->name;
-            $resolved_blog_info = resolve_uuid($db, $username, $blog_info->blog_uuid, $blog_info->blog_name);
+            $resolved_blog_info = resolve_uuid($db, $username, $blog_info, $blog_info->blog_name);
         } catch (Exception $e) {
             throw $e;
         } 
@@ -63,21 +72,22 @@ function beginSearch($db) {
             $activate_search = $db->prepare("INSERT INTO active_queries (query_text, query_params, blog_uuid) VALUES (:query_text, :query_params, :blog_uuid) ON CONFLICT (query_text, query_params, blog_uuid) DO UPDATE SET blog_uuid = EXCLUDED.blog_uuid returning search_id");
             $activate_search->execute(["query_text" => $query, "query_params"=>$search_params, "blog_uuid" => $blog_info->blog_uuid]);
             $blog_info->search_id = $activate_search->fetchColumn();
+            $search_id_info = (object)[]; 
+            $search_id_info->server = $_SERVER["HTTP_HOST"];
             if($is_insurance_check != true) {
                 /* clientside script checks for missed results on completion, 
                 but this makes me paranoid about infinite loops if I put the wrong FINISHEDINDEXING event, and anyway it's more efficient just to skip so...*/
                 $predir = __DIR__;
-                $exec_string = "php ".__DIR__."/internal/archive.php ". $blog_info->search_id;
+                $exec_string = "php ".__DIR__."/internal/archive.php ". $blog_info->search_id. " ". $search_id_info->server;
                 if(!$index_disabled) exec("$exec_string  > /dev/null &");
                 else if($blog_info->indexed_post_count == 0) {
                     throw new Exception("Sorry, indexing of new blogs is temporarily disabled for maintenance");
                 }
             }
-            $search_id_info = (object)[]; 
+            
             $search_id_info->search_id = $blog_info->search_id;
             $search_id_info->valid = true;
             $search_id_info->is_init = true;
-            $search_id_info->server = $_SERVER["HTTP_HOST"];
             $search_id_info->blog_uuid = $blog_info->blog_uuid;
             encodeAndFlush($search_id_info);
         }

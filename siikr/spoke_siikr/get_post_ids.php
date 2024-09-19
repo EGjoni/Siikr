@@ -2,10 +2,10 @@
 /**
  * Requests that this siikr spoke return any post_ids it has indexed meeting the
  * the specified constraints for the requested blog.
- * The response will be JSON array of post_id stirngs. 
+ * The response will be JSON array of JSON objects {post_id: //stirng, post_date: //epoch}. 
  * 
  * Takes as arguments  
- *  a  `blog_uuid` (required),  
+ *  a  `blog_uuid` (required),
  *  a  'version` parameter (required, single character 0-9,a-Z), 
  *  a  `before` parameter (timestamp, optional), and
  *  an `after` parameter (timestamp, optional)
@@ -21,15 +21,24 @@ $args = ["blog_uuid" => $blog_uuid, "index_version" => $_GET["version"]];
 $before_cond = "";
 $after_cond = "";
 if(isset($_GET["before"])) { 
-    $before_cond = "AND post_date <= :before_timestamp ";
-    $args["before_timestamp"] = $_GET("before");
+    $before_cond .= "AND "; 
+    if (isset($_GET["after"])) $before_cond .= "(";
+    $before_cond .= " post_date <= to_timestamp(:before_timestamp) ";
+    $args["before_timestamp"] = $_GET["before"];
 }
 if(isset($_GET["after"])) { 
-    $after_cond = "AND post_date >= :after_timestamp ";
-    $args["after_timestamp"] = $_GET("after");
+    $after_cond = isset($_GET["before"]) ? " OR " : " AND ";
+    $after_cond .= "post_date >= to_timestamp(:after_timestamp) ";
+    $args["after_timestamp"] = $_GET["after"];
+    $after_cond .= isset($_GET["before"]) ? ")" : "";
 }
 
-$post_ids = $db->prepare("SELECT post_id FROM post WHERE blog_uuid = :blog_uuid AND index_version = :index_version $before_cond $after_cond")->exec($args)->fetchAll(PDO::FETCH_COLUMN);
+$get_ranges = $db->prepare(
+    "SELECT post_id, post_date FROM posts 
+    WHERE blog_uuid = :blog_uuid 
+    AND index_version = :index_version $before_cond $after_cond");
+
+$post_ids = $get_ranges->exec($args)->fetchAll(PDO::FETCH_OBJ);
 
 if($post_ids == false) {
     $post_ids = [];

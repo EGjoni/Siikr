@@ -17,7 +17,7 @@ try {
     }
     if($usenode != null) {
         cacheBestNode($blog_uuid, $usenode);
-        forwardRequest($_GET, 'get_tags.php', $usenode, false);
+        forwardRequest($_GET, 'get_tags.php', $usenode, null, false);
     }        
 } catch (Exception $e) {
     $blog_info = (object)[];

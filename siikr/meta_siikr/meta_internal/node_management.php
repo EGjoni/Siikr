@@ -1,5 +1,4 @@
 <?php
-
 $all_nodes_prep = $db->prepare("SELECT * FROM siikr_nodes");
 $all_nodes = $all_nodes_prep->exec([])->fetchAll(PDO::FETCH_OBJ); 
 $insert_into_nodemap = $db->prepare(
@@ -143,6 +142,7 @@ function askAllNodes($blog_uuid, $blog_info=null) {
     }
     $url_list = array_keys($nodes_by_url);
     $all_responses = [];
+    $nodes_by_id = [];
     $hosting_nodes = []; // contains nodes that purport to host the blog
     $available_nodes = []; // contains nodes that appear to be alive
     
@@ -157,6 +157,7 @@ function askAllNodes($blog_uuid, $blog_info=null) {
                 $node->reliability_boost +=0.06125;
                 $available_nodes[] = $node;
             }
+            $nodes_by_id[$node->node_id] = $node;
             foreach($json_result as $k => $v) if($k != "blogstat_info") $node->$k = $v;
             updateNodeStats($node);
             if($json_result["have_blog"] && isset($json_result["blogstat_info"])) {
@@ -173,12 +174,17 @@ function askAllNodes($blog_uuid, $blog_info=null) {
 
     multiCall($url_list, $processNodeResponse, $all_responses);
     $bestNode = null;
-    if(count($hosting_nodes) > 0) {
+    foreach($available_nodes as $an) {
+        if(!isset($an->indexed_post_count)) {
+            $an->indexed_post_count = 0;
+        }
+    } 
+    /*if(count($hosting_nodes) > 0) {
         $bestNode = tieBreaker($hosting_nodes, $blog_uuid, $blog_info);
     }
-    if($bestNode == null) {
+    if($bestNode == null || $bestNode->indexed_post_count == 0) {*/
         $bestNode = tieBreaker($available_nodes, $blog_uuid, $blog_info);
-    }
+    //}
     return $bestNode;
 }
 
@@ -205,8 +211,24 @@ function cacheBestNode($blog_uuid, $node) {
     ]);    
 }
 
-$cached_prep = $db->prepare("SELECT sn.* FROM cached_blog_node_map cbnm, siikr_nodes sn 
-    WHERE cbnm.blog_uuid = :blog_uuid AND sn.node_id = cbnm.node_id");
+$cached_prep = $db->prepare(
+    "SELECT 
+        sn.node_id,
+        sn.node_url,
+        sn.free_space_mb,
+        EXTRACT(epoch FROM sn.last_pinged_ourtime)::INT as last_pinged_ourtime,
+        EXTRACT(epoch FROM sn.last_pinged_nodetime)::INT as last_pinged_nodetime,
+        EXTRACT(epoch FROM bnm.last_index_count_modification_time)::INT as last_index_count_modification_time,
+        bnm.success, bnm.is_indexing, bnm.indexed_posts as indexed_post_count,
+        sn.estimated_calls_remaining,
+        sn.reliability
+    FROM cached_blog_node_map cbnm, 
+        blog_node_map bnm, 
+        siikr_nodes sn 
+    WHERE cbnm.blog_uuid = :blog_uuid 
+        AND sn.node_id = cbnm.node_id 
+        AND bnm.node_id = cbnm.node_id 
+        AND bnm.blog_uuid = cbnm.blog_uuid");
 $known_prep = $db->prepare(
     "SELECT
         bnm.success,
@@ -230,20 +252,29 @@ function findBestKnownNode($blog_uuid, $blog_info=null) {
     global $checkinQueue;
     global $cached_prep;
     global $known_prep;
+    global $deletion_rate;
     
     $cached_node = $cached_prep->exec(["blog_uuid"=>$blog_uuid])->fetch(PDO::FETCH_OBJ);
     if($cached_node != false) {
+        $cached_node->from_cache = true;
         return $cached_node;
     } else {        
         $known_hosts = $known_prep->exec(["blog_uuid"=>$blog_uuid])->fetchAll(PDO::FETCH_OBJ);
+        foreach($known_hosts as $host) {
+            $host->indexed_post_count *= $deletion_rate;
+        }
         if($known_hosts) {
             if(count($known_hosts) == 1) {
-                
-                return $known_hosts[0];
+                if(property_exists($known_hosts[0], "indexed_post_count") && $known_hosts[0]->indexed_post_count > 0) {
+                    $known_hosts[0]->indexed_post_count /= $deletion_rate;
+                    return $known_hosts[0];
+                }
+                else return null;
             } 
-            if(count($known_hosts) > 1) {
+            if(count($known_hosts) > 0) {
                 $bestCandidate = tieBreaker($known_hosts, $blog_uuid, $blog_info);
                 if($bestCandidate != null) {
+                    $bestCandidate->indexed_post_count /= $deletion_rate;
                     return $bestCandidate;
                 }
             }
@@ -260,6 +291,7 @@ function findBestKnownNode($blog_uuid, $blog_info=null) {
  **/
 function tieBreaker($hostList, $blog_uuid, $blogInfo=null) {
     global $checkinQueue;
+    
     $viableCandidates = [];
     foreach($hostList as $host) {
         if($host->reliabiltiy < 0 ) {
@@ -285,7 +317,7 @@ function tieBreaker($hostList, $blog_uuid, $blogInfo=null) {
             $posts_indexed = 1+(float)($host->indexed_post_count ?? 0);
             $posts_existing = (isset($blogInfo) ? (float)$blogInfo->posts : 1);
             $score *= (float)$posts_indexed / (float)$posts_existing; 
-            $estimated_calls_required = 0.1+((float)($posts_existing - $posts_indexed)/50.0);
+            $estimated_calls_required = max(0.02, 0.1+((float)($posts_existing - $posts_indexed)/50.0));
             //prefer not to use hosts that don't have very many calls left
             $score *= $host->estimated_calls_remaining/($estimated_calls_required);
         }
@@ -297,15 +329,17 @@ function tieBreaker($hostList, $blog_uuid, $blogInfo=null) {
     else {
         $bestCandidate = $viableCandidates[0];
         foreach ($viableCandidates as $candidate) {
-            if($candidate->score > $bestCandidate->socre) 
+            if($candidate->score > $bestCandidate->score) 
                 $bestCandidate = $candidate;
         }
         return $bestCandidate;
     } 
 }
 
-
-function forwardRequest($params, $endpoint, $node, $streaming = true) {
+/**
+ * @param payload is optional. if provided, we expect a php object which gets encoded as json to send as a post parameter to the endpoint
+ */
+function forwardRequest($params, $endpoint, $node, $payload = null, $streaming = true) {
     if(is_string($params)) 
         $urlparamsstr = $params;
     else 
@@ -313,16 +347,26 @@ function forwardRequest($params, $endpoint, $node, $streaming = true) {
     $fullUrl = $node->node_url . "/$endpoint?" . $urlparamsstr;
 
     if($streaming == false) {
-        $options = ['http' => ['ignore_errors' => true]];
+        $http_params = ['ignore_errors' => true];
+        if($payload != null) {
+            $http_params = [
+                'method' => 'POST',
+                'header' => 'Content-Type:application/json',
+                'content' => json_encode($payload),              
+                'ignore_errors' => true
+            ];
+        }
+        $options = ['http' => $http_params];
         $context = stream_context_create($options);
         $response = file_get_contents($fullUrl, false, $context);
         echo $response;
-        ob_flush();      
+        ob_flush();
         flush();
         ob_clean();
     } else {
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $fullUrl);
+        if($payload != null) curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
         /*$curl = curl_init();        
         curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($curl, CURLOPT_WRITEFUNCTION, function($curl, $data) {
@@ -331,7 +375,7 @@ function forwardRequest($params, $endpoint, $node, $streaming = true) {
         curl_setopt($ch, CURLOPT_HEADER, false);
 
         // no output buffering so we stream faster, though this means we have to trust the remote server more.
-        // I'm sure people are fundamentally good and would never abuse this so it's fine.
+        // but people are fundamentally good and would therefore never abuse this so it's fine.
         while (@ob_end_flush());
         ob_implicit_flush(true);
         curl_exec($ch);

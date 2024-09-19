@@ -22,13 +22,21 @@ function initSearch($username, $forward_params) {
         } 
         $blog_info->valid = true;
         $usenode = findBestKnownNode($blog_info->blog_uuid, $blog_info);
+        $ping_suggested = true;
         if($usenode == null) {
             $usenode = askAllNodes($blog_info->blog_uuid, $blog_info);
+            $ping_suggested = false;
         }
         if($usenode != false) {
+            if($usenode != false && $ping_suggested == false) {
+                registerToBlogNodeMap($blog_info->blog_uuid, $usenode);
+            }
             cacheBestNode($blog_info->blog_uuid, $usenode);
-            forwardRequest($forward_params, 'streamed_search.php', $usenode);
-            askAllNodes($blog_info->blog_uuid, $blog_info); //implicitly updates nodestats, doing it since we're here anyway
+            forwardRequest($forward_params, 'streamed_search.php', $usenode, $blog_info);
+            if($ping_suggested) {
+                askAllNodes($blog_info->blog_uuid, $blog_info);
+            }
+            //askAllNodes($blog_info->blog_uuid, $blog_info); //implicitly updates nodestats, doing it since we're here anyway
             cleanStaleCacheEntries();
         }
     } catch ( Exception $e) {

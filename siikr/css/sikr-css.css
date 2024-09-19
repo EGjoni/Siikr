@@ -174,16 +174,14 @@ section {
   flex-grow: 0.15;
   background-color: transparent;
   backdrop-filter: invert(0.21) saturate(2.5);
-  border-width: 2px;
-  /* width: 100%; */
+  border-width: 1px;
   font-size: 1.2em;
   flex-basis: 5em;
   flex-shrink: 2;
   border-style: solid;
-  border-color: #000000;
+  border-color: #00000090;
   text-align: center;
   color: white;
-  /* float: left; */
   font-family: helvetica;
   font-weight: bolder;
   padding-top: 7px;

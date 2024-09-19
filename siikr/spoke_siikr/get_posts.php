@@ -33,12 +33,12 @@ $after_cond = "";
 if(isset($_GET["before"])) { 
     $before_cond .= "AND "; 
     if (isset($_GET["after"])) $before_cond .= "(";
-    $before_cond .= " post_date <= :before_timestamp ";
+    $before_cond .= " post_date <= to_timestamp(:before_timestamp) ";
     $args["before_timestamp"] = $_GET("before");
 }
 if(isset($_GET["after"])) { 
     $after_cond = isset($_GET["before"]) ? " OR " : " AND ";
-    $after_cond .= "post_date >= :after_timestamp ";
+    $after_cond .= "post_date >= to_timestamp(:after_timestamp) ";
     $args["after_timestamp"] = $_GET("after");
     $after_cond .= isset($_GET["before"]) ? ")" : "";
 }

@@ -35,7 +35,6 @@ $result = [
 
 
 $last_stat_obj = $db->prepare("SELECT EXTRACT(epoch FROM req_time)::INT as req_time, response_code::INT, est_reavailable FROM self_api_hist ORDER by req_time desc LIMIT 1")->exec([])->fetch(PDO::FETCH_OBJ);
-$deletion_rate = 0.994; //approximate, we estimate users are sufficiently ashamed of roughly 0.5% of the things they say to warrant deletion. It would be expensive to determine the exact number on a case by case basis, so this estimate is derived from the average deletion rate on a sample of 200 users. The variance is actually quite high per user but ultimately this number gets divided by 50, so most of the variance gets swept under the 1.5 orders of magnitude.
 
 $pending_posts = $db->prepare(
             "SELECT SUM(GREATEST(1, bl.serverside_posts_reported - (bl.indexed_post_count*$deletion_rate))) as approximate_pending_post_count

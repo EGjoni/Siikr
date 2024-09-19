@@ -4,7 +4,6 @@ require_once 'disk_stats.php';
 require_once 'post_processor.php';
 //echo phpversion();
 $archiver_uuid = uuid_create_v4();
-$archiver_version = '3';
 $userInfo = posix_getpwuid(posix_geteuid());
 $db = new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
 $media_table = 'media';
@@ -24,7 +23,9 @@ function rollback() {
 
 $vsplit = explode(" ", $argv[1]);
 if(count($vsplit) > 0) $search_id = $vsplit[0];
-if(count($vsplit) > 1 && $vsplit[1] == "dev") register_shutdown_function('rollback');
+if($argc > 2) $this_server_url = $argv[2];
+if(count($vsplit) > 2) $this_server_url = $vsplit[1];
+if(count($vsplit) > 3 && $vsplit[3] == "dev") register_shutdown_function('rollback');
 
 $current_blog = $db->prepare("SELECT blog_uuid FROM active_queries WHERE search_id = ? LIMIT 1");
 $blog_uuid = $current_blog->exec([$search_id])->fetchColumn();
@@ -34,6 +35,11 @@ $searches_array = $get_active_queries->exec(["blog_uuid" => $blog_uuid])->fetchA
 
 $stmt_select_blog = $db->prepare("SELECT * FROM blogstats WHERE blog_uuid = ?");
 $db_blog_info = $stmt_select_blog->exec([$blog_uuid])->fetch(PDO::FETCH_OBJ);
+if($db_blog_info == false) {
+    $resolve_queries->execute(["blog_uuid" => $blog_uuid]);
+    $abandonLease->execute(["leader_uuid" => $archiver_uuid]);
+    die("Error: blog_uuid not in blogstats");
+}
 $db_blog_info->index_request_count += 1;
 $db->prepare("UPDATE blogstats SET index_request_count = ? WHERE blog_uuid = ?")->exec([$db_blog_info->index_request_count, $blog_uuid]);
 $resolve_queries = $db->prepare("DELETE FROM active_queries WHERE blog_uuid = :blog_uuid"); 
@@ -43,26 +49,20 @@ $zmqsock_identifier = $archiver_uuid; #each archiver_instance gets their own zmq
 require_once $predir.'/internal/messageQ.php';
 
 $blog_name = $db_blog_info->blog_name;
-if($blog_name) {
-    $server_blog_info = &call_tumblr($db_blog_info->blog_name, "info")->blog;
-} else {
-    $resolve_queries->execute(["blog_uuid" => $blog_uuid]);
-    $abandonLease->execute(["leader_uuid" => $archiver_uuid]);
-    die("Error: no name given"."\n");
-}
+
 
 $archiving_status = (object)[
     "blog_uuid" => $blog_uuid, 
     "blog_name" => $blog_name, 
     "as_search_result" => [],
-    "serverside_posts_reported" => &$server_blog_info->total_posts, //this ampersand means the value will remain updated when I reference $archiving_status again, right?
+    "serverside_posts_reported" => &$db_blog_info->serverside_posts_reported,
     "indexed_post_count" => &$db_blog_info->indexed_post_count,
     "indexed_this_time" => 0];
 
-if(!ensureSpace($db, $db_blog_info, $server_blog_info)) {
+if(!ensureSpace($db, $db_blog_info)) {
     $resolve_queries->execute(["blog_uuid" => $blog_uuid]);
     $abandonLease->execute(["leader_uuid" => $archiver_uuid]);
-    $archiving_status->notice = "Siikr is nearly out of disk space and this blog would make it die. For the good of many, it must sacrifice the few. (i.e you).";
+    $archiving_status->notice = "Siikr is nearly out of disk space and this blog would make it die. For the good of the many, it must sacrifice the few. (i.e you).";
     sendEventToAll($searches_array, 'NOTICE!', $archiving_status);
     die("Error: insufficient disk space");
 }
@@ -187,13 +187,13 @@ try {
     
     // Get the most_recent_post_id and post_id_last_indexed from the blogstats table
     $most_recent_post_id = $db_blog_info->most_recent_post_id;
+    $most_recent_post_info = $stmt_get_post_info->exec([$most_recent_post_id])->fetch(PDO::FETCH_OBJ);
     if($db_blog_info->time_last_indexed != null) {
         $post_id_last_indexed = $db_blog_info->post_id_last_indexed;
         $post_id_last_attempted = $db_blog_info->post_id_last_attempted;
         //next line is for debug. delete when done.
         //$smallest_post_id_indexed_info = $db->prepare("SELECT post_id, EXTRACT(epoch FROM post_date)::INT as timestamp FROM posts where blog_uuid = :blog_uuid ORDER BY post_id ASC LIMIT 1")->exec([$blog_uuid])->fetch(PDO::FETCH_OBJ);
-        $oldest_post_id_indexed =  $get_oldest_indexed_post->exec(["blog_uuid"=>$blog_uuid])->fetchColumn();          
-        $most_recent_post_info = $stmt_get_post_info->exec([$most_recent_post_id])->fetch(PDO::FETCH_OBJ);
+        $oldest_post_id_indexed =  $get_oldest_indexed_post->exec(["blog_uuid"=>$blog_uuid])->fetchColumn();
         if($most_recent_post_info->index_version < $archiver_version) { //start fresh if the posts are indexed with an old version
             unset($oldest_post_id_indexed, $post_id_last_indexed, $post_id_last_attempted, $most_recent_post_info, $most_recent_post_id);
         } else {
@@ -204,7 +204,7 @@ try {
         }
     }
     
-    $oldest_server_post = call_tumblr($blog_name, 'posts', ['limit' => 1, 'npf' => 'true', 'sort' => 'asc'])->posts[0];
+    //$oldest_server_post = call_tumblr($blog_name, 'posts', ['limit' => 1, 'npf' => 'true', 'sort' => 'asc'])->posts[0];
     
 
     function insert_media(&$db_post_obj, &$media_list) {
@@ -258,6 +258,10 @@ try {
     $max_loop_count = count($gap_queue) * 2;
     $response_post_num = 0;
     $limit_start = 50;
+    require_once 'adopt_blog.php';
+    gather_foreign_posts($blog_uuid, $archiver_version, $this_server_url, 
+                        $oldest_post_indexed_info?->timestamp ?? null, 
+                        $most_recent_post_info?->timestamp ?? null);
     do {
         $before_info = array_pop($gap_queue);
         $before_time = $before_info == null? null:$before_info->timestamp;
@@ -267,7 +271,7 @@ try {
             $disk_use = get_disk_stats();        
             $params = ['limit' => $limit_start, 'notes_info' => "true", 'npf' => 'true', 'before' => $before_time, 'sort' => 'desc'];
             do { //apparently sometimes the api just flat out breaks if you ask for more posts than it has.
-                $server_blog_info = call_tumblr($blog_name, 'posts', $params);
+                $server_blog_info = call_tumblr($blog_uuid, 'posts', $params);
                 if($server_blog_info == null) {
                     if($limit_start/2 <= 1 && $params["notes_info"] == true) {
                         $params["notes_info"] = false; //a lot of times the API breaking happens as a result of note data i guess, so  try without those before giving up  
