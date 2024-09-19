@@ -1,4 +1,5 @@
 <?php?>
+<h1 style='color: red'> I AM CURRENTLY CODING DIRECTLY ON PRODUCTION PLEASE DO NOT SEARCH FOR THINGS THAT WILL BURN MY EYES</h1>
 <div id = "maintenance-notice" style="text-align: center;"> <b>Notice:</b> Siikr is now <span style="font-size:1.3em; font-size: 1.3em;
     color: white;    
     filter:drop-shadow(0px 0px 5px red) drop-shadow(0px 0px 4px yellow) drop-shadow(0px 0px 3px green) drop-shadow(0px 0px 2px cyan) drop-shadow(0px 0px 1px blue);">

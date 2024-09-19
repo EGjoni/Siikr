@@ -37,6 +37,13 @@ class SPDOStatement extends PDOStatement {
         return $result;
     }
 
+    /**convenience function. binds multiple values in provided associative array*/
+    public function bindValues($params) {
+        foreach($params as $k => $v) {
+            $this->bindValue(":$k", $v);
+        }
+    }
+
 
     public function debug($params = null, $asStr=false, $paramSummary=false) {
         $interpolatedQuery = $this->queryString;

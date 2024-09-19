@@ -7,36 +7,33 @@
  * Takes as arguments  
  *  a  `blog_uuid` (required),
  *  a  'version` parameter (required, single character 0-9,a-Z), 
- *  a  `before` parameter (timestamp, optional), and
- *  an `after` parameter (timestamp, optional)
- * 
- * NOTE that before and after parameters behave somewhat unituitively. Specifically, if both are specified, and after is less than before, then they indicate an interval between which the any posts of that timestamp will be returned. If both are specified and after greater than befoe, then they specify to distinct intervalsone from the most recent post_date on the spoke down to the after timestamp, and another from the oldest post_date on the spoke, up to the before timestamp
+ *  a  `limit` (optional, an integer indicating the maximum number of posts to retrieve from each spoke (default 200, best not to set this too high as nodes may timeout while trying to retrieve the posts))
+ *  either a  `before` parameter (optional, timestamp), or an `after` parameter (timestamp, optional) 
  */
 
 require_once './../internal/globals.php';
 $blog_uuid = $_GET["blog_uuid"];
 
 $db = new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
-$args = ["blog_uuid" => $blog_uuid, "index_version" => $_GET["version"]];
-$before_cond = "";
-$after_cond = "";
-if(isset($_GET["before"])) { 
-    $before_cond .= "AND "; 
-    if (isset($_GET["after"])) $before_cond .= "(";
-    $before_cond .= " post_date <= to_timestamp(:before_timestamp) ";
-    $args["before_timestamp"] = $_GET["before"];
-}
+$args = [
+    "blog_uuid" => $blog_uuid, 
+    "index_version" => $_GET["version"], 
+    "result_limit" => isset($_GET["limit"]) ? $_GET["limit"] : 200];
+$time_stmt = "post_date < now()";
 if(isset($_GET["after"])) { 
-    $after_cond = isset($_GET["before"]) ? " OR " : " AND ";
-    $after_cond .= "post_date >= to_timestamp(:after_timestamp) ";
-    $args["after_timestamp"] = $_GET["after"];
-    $after_cond .= isset($_GET["before"]) ? ")" : "";
+    $time_stmt = " post_date > to_timestamp(:timestamp_anchor) ";
+    $args["timestamp_anchor"] = $_GET["after"];
+} else if(isset($_GET["before"])) { 
+    $time_stmt = " post_date < to_timestamp(:timestamp_anchor) ";
+    $args["timestamp_anchor"] = $_GET["before"];
 }
 
 $get_ranges = $db->prepare(
     "SELECT post_id, post_date FROM posts 
     WHERE blog_uuid = :blog_uuid 
-    AND index_version = :index_version $before_cond $after_cond");
+    AND index_version = :index_version 
+    AND $time_stmt
+    LIMIT :result_limit");
 
 $post_ids = $get_ranges->exec($args)->fetchAll(PDO::FETCH_OBJ);
 

@@ -1889,7 +1889,7 @@ SET default_tablespace = '';
 -- Name: idx_posts_tags_blog_uuid; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idx_posts_tags_blog_uuid ON public.posts_tags USING btree (blog_uuid);
+CREATE INDEX idx_posts_tags_blog_uuid ON public.posts_tags USING hash (blog_uuid);
 
 
 --
@@ -1963,7 +1963,7 @@ CREATE INDEX post_deleted ON public.posts USING btree (deleted);
 -- Name: post_id_1691300947621_index; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX post_id_1691300947621_index ON public.posts_tags USING btree (post_id);
+CREATE INDEX post_id_1691300947621_index ON public.posts_tags USING hash (post_id);
 
 
 --
@@ -2009,7 +2009,7 @@ SET default_tablespace = '';
 -- Name: tag_id_1691505411923_index; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX tag_id_1691505411923_index ON public.posts_tags USING btree (tag_id);
+CREATE INDEX tag_id_1691505411923_index ON public.posts_tags USING hash (tag_id);
 
 
 --
