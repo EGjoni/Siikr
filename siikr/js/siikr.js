@@ -267,43 +267,28 @@ async function resetProgressListeners(obj) {
 	reinitPseudoSocket('https://'+obj.server+"/routing/serverEvents.php");		
 	
 	progressListener.setListener("indexbegin",
-		"INDEXNG!"+search_id, {
-			'queryFunction' : 'findBestKnownNode',
-			'params' : {"search_id" : search_id, "blog_uuid" : obj.blog_uuid}
-		},
+		"INDEXNG!"+search_id, {},
 		()=>{
 			console.log("ARCHIVER STARTED");
 		}
 	);
 	progressListener.setListener("indexconclude",
-		"FINISHEDINDEXING!"+search_id,{
-			'queryFunction' : 'findBestKnownNode',
-			'params' : {"search_id" : search_id, "blog_uuid" : obj.blog_uuid}
-		},
+		"FINISHEDINDEXING!"+search_id,{},
 		concludeIndexState
 	);
 	progressListener.setListener("indexpostupdate", 
-		"INDEXEDPOST!"+search_id, {
-			'queryFunction' : 'findBestKnownNode',
-			'params' : {"search_id" : search_id, "blog_uuid" : obj.blog_uuid}
-		},
+		"INDEXEDPOST!"+search_id, {},
 		updateIndexState
 	);
 	progressListener.setListener("indextagupdate", 
-		"INDEXEDTAG!"+search_id, {
-			'queryFunction' : 'findBestKnownNode',
-			'params' : {"search_id" : search_id, "blog_uuid" : obj.blog_uuid}
-		},
+		"INDEXEDTAG!"+search_id, {},
 		updateAvailableTags
 	);
-	noticeListener.setListener("noticelistener", "NOTICE!"+search_id, {
-		'queryFunction' : 'findBestKnownNode',
-		'params' : {"search_id" : search_id, "blog_uuid" : obj.blog_uuid}
-	}, updateNoticeText);
-	noticeListener.setListener("errorlistener", "ERROR!"+search_id, {
-		'queryFunction' : 'findBestKnownNode',
-		'params' : {"search_id" : search_id, "blog_uuid" : obj.blog_uuid}
-	}, updateErrorText);
+	noticeListener.setListener("noticelistener", 
+		"NOTICE!"+search_id, {}, 
+		updateNoticeText);
+	noticeListener.setListener("errorlistener", 
+		"ERROR!"+search_id, {}, updateErrorText);
 }
 
 /**maintains a leader stream fetcher object. leader gets replaced by any new calls to the s_fetch(), and an old streaming fetchers halt their progress if the aren't the leader. 

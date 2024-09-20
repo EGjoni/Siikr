@@ -245,10 +245,29 @@ $known_prep = $db->prepare(
     FROM blog_node_map bnm, siikr_nodes sn 
     WHERE bnm.blog_uuid = :blog_uuid AND bnm.node_id = sn.node_id");
 
-/**Checks to see if we know of a node that host the blog. Attempts to return the best node for the job if we do
- * returns null if no nodes no of the blog or none are viable
+/**Checks to see if we know of a node that already has a bunch of posts archived from this blog. This is intended for a quick initial search. Afterward, a call should be made to 'findBestArchiverNode' to determine if the blog will need to be transferred over to a seperate node for archiving.
+* Attempts to return the best node for the job if we do returns null if no nodes no of the blog or none are viable
 */
-function findBestKnownNode($blog_uuid, $blog_info=null) {
+function findBestSearchNode($blog_uuid, $blog_info=null) {
+    global $checkinQueue;
+    global $cached_prep;
+    global $known_prep;
+    global $deletion_rate;
+              
+    $known_hosts = $known_prep->exec(["blog_uuid"=>$blog_uuid])->fetchAll(PDO::FETCH_OBJ);
+    $best_search_node = $known_hosts[0];
+    if($best_search_node == false) $best_search_node = null;
+    foreach($known_hosts as $host) {
+        if($host->indexed_post_count > $best_search_node->indexed_post_count)
+            $best_search_node = $host;
+    }
+    return $best_search_node;
+}
+
+/**Checks to see if we know of a node that already has a bunch of posts archived from this blog. This is intended for a quick initial search. Afterward, a call should be made to 'findBestArchiverNode' to determine if the blog will need to be transferred over to a seperate node for archiving.
+* Attempts to return the best node for the job if we do returns null if no nodes no of the blog or none are viable
+*/
+function findBestArchivingNode($blog_uuid, $blog_info=null) {
     global $checkinQueue;
     global $cached_prep;
     global $known_prep;
@@ -282,6 +301,8 @@ function findBestKnownNode($blog_uuid, $blog_info=null) {
         return null;
     }
 }
+
+
 /**
  * given multiple hosts, determines which one should perform the search based 
  * solely on capacity, 
@@ -336,6 +357,7 @@ function tieBreaker($hostList, $blog_uuid, $blogInfo=null) {
     } 
 }
 
+
 /**
  * @param payload is optional. if provided, we expect a php object which gets encoded as json to send as a post parameter to the endpoint
  */
@@ -366,18 +388,28 @@ function forwardRequest($params, $endpoint, $node, $payload = null, $streaming =
     } else {
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $fullUrl);
-        if($payload != null) curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
-        /*$curl = curl_init();        
-        curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($curl, CURLOPT_WRITEFUNCTION, function($curl, $data) {
-        }); */
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, false);  //for streaming the response directly
-        curl_setopt($ch, CURLOPT_HEADER, false);
-
-        // no output buffering so we stream faster, though this means we have to trust the remote server more.
-        // but people are fundamentally good and would therefore never abuse this so it's fine.
-        while (@ob_end_flush());
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        //curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 500);
         ob_implicit_flush(true);
+        curl_setopt($ch, CURLOPT_WRITEFUNCTION, function($curl, $data) {
+            echo $data;
+            ob_flush();      
+            flush();
+            ob_clean();
+            return strlen($data);
+        });
+        if($payload != null) {
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+            curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+        }
+        //curl_setopt($ch, CURLOPT_RETURNTRANSFER, false);  //for streaming the response directly
+        
+        /*ob_implicit_flush(true);
+        $counts = 0;
+        while (@ob_end_flush()) {
+            $counts++;
+        };*/
+        
         curl_exec($ch);
         curl_close($ch);
     }

@@ -23,7 +23,8 @@ $before_requested = $_GET["before"];
 $after_requested = $_GET["after"];
 $index_version_requested = isset($_GET["version"]) ? $_GET["version"] : $archiver_version;
 $blog_uuid = $_GET["blog_uuid"];
-$requested_by = $_GET["requested_by"];
+$requested_by = 'https://'.normalizeURL($_GET["requested_by"]);
+
 $limit = isset($_GET["limit"]) ? $_GET["limit"] : 200;
 
 if($requested_by == null) throw new Error("Error: requested_by is a required parameter");
@@ -64,7 +65,7 @@ $update_post_spokes = function($new_results) use (&$spokes_by_url, &$spoke_posts
         $post_array = json_decode($result["response"], true);        
         foreach($post_array as $post) {
             $p_id = $post["post_id"];
-            $p_epoch = $post["post_date"];
+            $p_epoch = (int)$post["timestamp"];
             $spoke_posts["$spoke->node_id"]["$p_id"] = $p_epoch;
             $post_spokes["$p_id"][] = $spoke->node_id;
             $timestamp_posts["$p_id"] = $p_epoch;
@@ -80,6 +81,21 @@ $update_post_spokes = function($new_results) use (&$spokes_by_url, &$spoke_posts
 require_once 'meta_internal/node_management.php';
 multiCall($request_urls, $update_post_spokes, $all_results);
 arsort($timestamp_posts);
+$truncated_posts = array_slice($timestamp_posts, $limit, count($timestamp_posts), true);
+
+foreach($truncated_posts as $post_id => $epoch) {    
+    foreach($post_spokes as $post_id => $on_spokes) {
+        $on_spokes = $post_spokes["$post_id"];
+        foreach($on_spokes as $hosting_id) {
+            unset($spoke_posts["$hosting_id"]["$post_id"]);
+        }
+    }
+    unset($post_spokes["$post_id"]);
+}
+
+$timestamp_posts = array_slice($timestamp_posts, 0, $limit, true);
+
+$consolidated_posts = [];
 
 foreach($spoke_posts as $spoke_id => $post_arr) {
     $post_ids = array_keys($post_arr);
@@ -94,17 +110,17 @@ foreach($spoke_posts as $spoke_id => $post_arr) {
         $http_query = http_build_query(["blog_uuid"=>$blog_uuid, "version" => $index_version_requested]);
         $req_url = $spoke->node_url."/spoke_siikr/get_posts.php?".$http_query;
         $context = stream_context_create($options);
-        $post_results = file_get_contents($req_url, false, $context);
+        $req_results = file_get_contents($req_url, false, $context);
+        $post_results = json_decode($req_results);
         foreach($post_results as $post) {
-            $on_spokes = $post_spokes[$post->post_id];
+            $on_spokes = $post_spokes["$post->post_id"];
             foreach($on_spokes as $hosting_id) {
-                unset($spoke_posts[$hosting_id][$post->post_id]);
+                unset($spoke_posts["$hosting_id"]["$post->post_id"]);
             }
+            $consolidated_posts[] = $post;
         }
     }
 }
-
-$consolidated_posts = [];
 
 
 
@@ -118,6 +134,6 @@ $oldest_post_epoch = current($timestamp_posts);
 
 
 header('Content-Type: application/json');
-echo json_encode($post_ids);
+echo json_encode($consolidated_posts);
 ob_flush();      
 flush();

@@ -571,23 +571,6 @@ function pruneSubPostToJSONB($post, &$db_post_obj) {
     return $respost;
 }
 
-/**strips http:// or https:// from the url 
- * also automatically sets utf-8 encoding
-*/
-function normalizeURL($url) {
-    global $possible_encodings;
-    
-    $url = ltrimstr($url, "https://");
-    
-    return rtrim(ltrimstr($url, "http://"), "/");
-}
-function ltrimstr($string, $substring){
-    return preg_replace('/^'.preg_quote($substring, '/').'/', '', $string);
-}
-function rtrimstr($string, $substring){
-    return preg_replace('/'.preg_quote($substring, '/').'$/', '', $string);
-}
-
 
 $formatting_map = [
     "bold" => "b",

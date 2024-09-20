@@ -30,20 +30,20 @@ function gather_foreign_posts($blog_uuid, $archiver_version, $this_server_url, $
             $params["after"] = $after_timestamp;
             $fullUrl = $hub_url."gather_posts.php?".http_build_query($params);
             $response = file_get_contents($fullUrl, false, $context);
-            $results = json_decode($response);
+            $results = json_decode($response);            
             ingest_posts($blog_uuid, $results);
             $after_timestamp = $results[0]->timestamp;
             $oldest_returned = $results[count($results)-1];
-            if($before_timestamp == null || $oldest_returned->timestamp < $before_timestamp) {
-                $before_timestamp = $oldest_returned->timestamp;
+            if($before_timestamp == null || isset($oldest_returned)) {
+                $before_timestamp = min($before_timestamp, $oldest_returned->timestamp);
             }
         }
     } while(count($results) >= 200);
 
     unset($params["after"]);
-   
+    
     do {
-        if($before_timestamp != null) $params["before"] = $before_timestamp;
+        if($before_timestamp != null) $params["before"] = (int)$before_timestamp;
         $fullUrl = $hub_url."gather_posts.php?".http_build_query($params);
         $response = file_get_contents($fullUrl, false, $context);
         $results = json_decode($response);

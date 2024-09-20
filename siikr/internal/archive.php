@@ -35,6 +35,7 @@ $searches_array = $get_active_queries->exec(["blog_uuid" => $blog_uuid])->fetchA
 
 $stmt_select_blog = $db->prepare("SELECT * FROM blogstats WHERE blog_uuid = ?");
 $db_blog_info = $stmt_select_blog->exec([$blog_uuid])->fetch(PDO::FETCH_OBJ);
+$resolve_queries = $db->prepare("DELETE FROM active_queries WHERE blog_uuid = :blog_uuid"); 
 if($db_blog_info == false) {
     $resolve_queries->execute(["blog_uuid" => $blog_uuid]);
     $abandonLease->execute(["leader_uuid" => $archiver_uuid]);
@@ -42,7 +43,7 @@ if($db_blog_info == false) {
 }
 $db_blog_info->index_request_count += 1;
 $db->prepare("UPDATE blogstats SET index_request_count = ? WHERE blog_uuid = ?")->exec([$db_blog_info->index_request_count, $blog_uuid]);
-$resolve_queries = $db->prepare("DELETE FROM active_queries WHERE blog_uuid = :blog_uuid"); 
+
 
 
 $zmqsock_identifier = $archiver_uuid; #each archiver_instance gets their own zmq socket for update broadcasts
@@ -259,9 +260,9 @@ try {
     $response_post_num = 0;
     $limit_start = 50;
     require_once 'adopt_blog.php';
-    gather_foreign_posts($blog_uuid, $archiver_version, $this_server_url, 
+    /*gather_foreign_posts($blog_uuid, $archiver_version, $this_server_url, 
                         $oldest_post_indexed_info?->timestamp ?? null, 
-                        $most_recent_post_info?->timestamp ?? null);
+                        $most_recent_post_info?->timestamp ?? null);*/
     do {
         $before_info = array_pop($gap_queue);
         $before_time = $before_info == null? null:$before_info->timestamp;

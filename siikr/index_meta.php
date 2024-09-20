@@ -10,6 +10,7 @@ if($_GET['lemmein']==true) {
 } else {
 	?>
     <!--<span style="color: #FFFA;font-family: sans;text-align: center;filter: drop-shadow(0px 0px 14px white) drop-shadow(0px 0px 18px black);">
+    
         <h1 style="color: #FFF8;font-family: sans-serif;font-weight: 100;">In Defiance of Daedalus </h1>
         <h1 style="color: #FFFC;font-family: sans;font-weight: 500;">— In Pride and Awe and Ecstasy —</h1> 
         <h1 style="color: #FFFC;font-weight: 400;font-size: 2.2em;font-family: system-ui;">Siikr Has Flown Too Close to the Sun </h1>

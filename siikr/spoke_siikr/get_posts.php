@@ -52,7 +52,7 @@ $stmt = $db->prepare(
     COALESCE(mediaagg.media_info, '[]'::json) media
         FROM (
             SELECT 
-                post_id as post_id_i, post_date, blocksb as blocks, tag_text, is_reblog, hit_rate, extract(epoch from post_date) as timestamp
+                post_id as post_id_i, post_date, blocksb as blocks, tag_text, is_reblog, hit_rate, extract(epoch from post_date)::INT as timestamp
             FROM posts
             WHERE blog_uuid = :blog_uuid
             AND index_version = :index_version

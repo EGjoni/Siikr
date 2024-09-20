@@ -101,6 +101,21 @@ $DENUM = [
 ];
 
 
+/**strips http:// or https:// from the url 
+ * also automatically sets utf-8 encoding
+*/
+function normalizeURL($url) {
+    global $possible_encodings;    
+    $url = ltrimstr($url, "https://");    
+    return rtrim(ltrimstr($url, "http://"), "/");
+}
+function ltrimstr($string, $substring){
+    return preg_replace('/^'.preg_quote($substring, '/').'/', '', $string);
+}
+function rtrimstr($string, $substring){
+    return preg_replace('/'.preg_quote($substring, '/').'$/', '', $string);
+}
+
 function get_base_url($blog_name_or_uuid, $request_type) {
     if(substr($blog_name_or_uuid, 0, 2) == "t:")
         return "https://api.tumblr.com/v2/blog/{$blog_name_or_uuid}/$request_type?";
@@ -162,6 +177,26 @@ function call_tumblr($blog_name_or_uuid, $request_type, $params=[], $with_meta =
     }
     
     return $response->response;
+}
+
+
+function fireForgetRequest($params, $endpoint, $payload) {    
+    if(is_string($params)) $urlparamsstr = $params;
+    else $urlparamsstr = http_build_query($params);
+    $fullUrl = $node->node_url . "/$endpoint?" . $urlparamsstr;    
+    $ch = curl_init($fullUrl);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, false);
+    curl_setopt($ch, CURLOPT_TIMEOUT_MS, 200);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT_MS, 200);
+    curl_setopt($ch, CURLOPT_NOSIGNAL, true);
+
+    curl_setopt($ch, CURLOPT_POST, true);
+    if($payload != null) {
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
+    }
+    curl_exec($ch);
+    curl_close($ch);
 }
 
 function determine_reavailability($headers) {

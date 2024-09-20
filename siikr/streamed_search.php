@@ -2,8 +2,6 @@
 require_once './internal/globals.php';
 $index_disabled = false;
 
-
-
 $offset = $_GET["offset"];
 $limit = $_GET["limit"];
 
@@ -27,6 +25,11 @@ $sort_mode = ["score" => "ORDER BY score desc",
 
 if($limit == null) $limit = $MAX_LIMIT;
 
+$meta_search_params = [
+    "search_only" => isset($_GET["search_only"]) && $_GET["search_only"] == true,
+    "listen_to" => isset($_GET["listen_to"]) ? $_GET["listen_to"] : $_SERVER["HTTP_HOST"],
+    "archive_only" => isset($_GET["archive_only"]) && $_GET["archive_only"]
+];
 $search_params_arr = [];
 foreach($search_params_assoc as $k => $v) {
     $search_params_arr[] = "$k:$v";
@@ -35,10 +38,12 @@ $search_params = implode(",", $search_params_arr);
 
 function beginSearch($db) {
     global $index_disabled;
+    global $meta_search_params;
     global $blog_info;
     global $username; 
     global $raw_query;
     global $search_params;
+    
     global $sort_mode;
     global $supplied_info;
     
@@ -66,22 +71,24 @@ function beginSearch($db) {
         $blog_info->valid = true;
         augmentValid($db, $blog_info);
         $search_query = getTextSearchString($query, $search_params)." $sort_mode";
-
+        $archive_only = $meta_search_params["archive_only"];
+        $search_only = $meta_search_params["search_only"];
         
         if(!$is_insurance_check) {
             $activate_search = $db->prepare("INSERT INTO active_queries (query_text, query_params, blog_uuid) VALUES (:query_text, :query_params, :blog_uuid) ON CONFLICT (query_text, query_params, blog_uuid) DO UPDATE SET blog_uuid = EXCLUDED.blog_uuid returning search_id");
             $activate_search->execute(["query_text" => $query, "query_params"=>$search_params, "blog_uuid" => $blog_info->blog_uuid]);
             $blog_info->search_id = $activate_search->fetchColumn();
             $search_id_info = (object)[]; 
-            $search_id_info->server = $_SERVER["HTTP_HOST"];
+            $search_id_info->server = $meta_search_params["listen_to"];
             if($is_insurance_check != true) {
                 /* clientside script checks for missed results on completion, 
                 but this makes me paranoid about infinite loops if I put the wrong FINISHEDINDEXING event, and anyway it's more efficient just to skip so...*/
                 $predir = __DIR__;
                 $exec_string = "php ".__DIR__."/internal/archive.php ". $blog_info->search_id. " ". $search_id_info->server;
-                if(!$index_disabled) exec("$exec_string  > /dev/null &");
-                else if($blog_info->indexed_post_count == 0) {
-                    throw new Exception("Sorry, indexing of new blogs is temporarily disabled for maintenance");
+                $no_index = $search_only || $index_disabled;
+                if(!$no_index) exec("$exec_string  > /dev/null &");
+                else if($index_disabled) {
+                    throw new Exception("Sorry, indexing of new posts is temporarily disabled for maintenance");
                 }
             }
             
@@ -89,11 +96,17 @@ function beginSearch($db) {
             $search_id_info->valid = true;
             $search_id_info->is_init = true;
             $search_id_info->blog_uuid = $blog_info->blog_uuid;
-            encodeAndFlush($search_id_info);
+            if(!$search_only)
+                encodeAndFlush($search_id_info);
         }
         $blog_info->tag_list = [];
         
-        sendByStreamedSet($db, $blog_info, $search_query);
+        if(!$archive_only)
+            sendByStreamedSet($db, $blog_info, $search_query);
+        if($search_only) {
+            $resolve_queries = $db->prepare("DELETE FROM active_queries WHERE blog_uuid = :blog_uuid"); 
+            $resolve_queries->exec(["blog_uuid" => $blog_info->blog_uuid]);
+        }
         //getByOffset($db, $blog_info, $search_query);        
         /*$tags_stmt = $db->prepare(getTagInfoString());
         $tags_stmt->execute(["blog_uuid" => $blog_info->blog_uuid]);*/

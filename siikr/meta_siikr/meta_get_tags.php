@@ -11,12 +11,12 @@ try {
     if($blog_uuid == false) {
         throw new Exception("blog_uuid is required");
     } 
-    $usenode = findBestKnownNode($blog_uuid);
+    $usenode = findBestSearchNode($blog_uuid);
     if($usenode == null) {
         throw new Exception("No cached node is present. This could hypothetically be worked around but is too spooky not to mention.");
     }
     if($usenode != null) {
-        cacheBestNode($blog_uuid, $usenode);
+        //cacheBestNode($blog_uuid, $usenode);
         forwardRequest($_GET, 'get_tags.php', $usenode, null, false);
     }        
 } catch (Exception $e) {

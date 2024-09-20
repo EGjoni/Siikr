@@ -29,7 +29,7 @@ if(isset($_GET["after"])) {
 }
 
 $get_ranges = $db->prepare(
-    "SELECT post_id, post_date FROM posts 
+    "SELECT post_id, extract(epoch from post_date)::INT as timestamp FROM posts 
     WHERE blog_uuid = :blog_uuid 
     AND index_version = :index_version 
     AND $time_stmt
@@ -43,6 +43,7 @@ if($post_ids == false) {
 
 
 header('Content-Type: application/json');
-echo json_encode($post_ids);
+$encoded = json_encode($post_ids);
+echo $encoded;
 ob_flush();      
 flush();
