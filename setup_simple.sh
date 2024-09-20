@@ -220,6 +220,29 @@ set_credentials_file() {
 EOF
 }
 
+set_server_conf_file() {
+    
+    if [ $rate_limited = true ]; then
+        am_unlimited=false
+    else
+        am_unlimited=true
+    fi
+
+    meta_host="$hub_url"
+    
+    if [ $default_meta = true ]; then #unquoted because I want it to error if it's not a boolean
+        meta_host=$siikr_domain
+    fi
+    cat > "$node_specific_data/auth/config.php" << EOF
+<?php
+\$default_meta = $default_meta;
+\$content_text_config = '$content_text_config';
+\$language = '$language';
+\$am_unlimited = $am_unlimited;
+\$hub_url = "$meta_host";
+EOF
+}
+
 copy_data() {
     if [ -d "$document_root" ]; then
         if [ -d "$script_dir/previous_version" ]; then
@@ -254,5 +277,6 @@ set_credentials_file
 configure_nginx
 create_db
 configure_postgresql_auth
+set_server_conf_file
 copy_data
 echo -e "\033[33mSetup complete. If this script didn't work for you, please fix it and contribute back.\033[0m"

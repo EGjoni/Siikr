@@ -1,6 +1,5 @@
 <?php
 $archiver_version = '3';
-$hub_url = "https://siikr.giftedapprentice.com/meta_siikr/";
 $deletion_rate = 0.994; //approximate, we estimate users are sufficiently ashamed of roughly 0.5% of the things they say to warrant deletion. It would be expensive to determine the exact number on a case by case basis, so this estimate is derived from the average deletion rate on a sample of 200 users. The variance is actually quite high per user but ultimately this number gets divided by 50, so most of the variance gets swept under the 1.5 orders of magnitude.
 
 
@@ -78,11 +77,12 @@ class SPDO extends PDO {
 
 $predir = __DIR__.'/../';
 require_once $predir.'auth/credentials.php';
+require_once $predir.'auth/config.php';
 require_once 'disk_stats.php';
 
 
 $clean_sp = [
-    "sp_self_text", "sp_self_mentions", "sp_trail_text", "sp_trail_mentions", //v4 en_hun_simple
+    "sp_self_text", "sp_self_mentions", "sp_trail_text", "sp_trail_mentions", //v4 ts_content
     "sp_tag_text", "sp_self_media", "sp_trail_media", "sp_trail_usernames", //v4 ts_meta
     "sp_image_text"//v3
 ];
@@ -399,7 +399,8 @@ function parseParams($paramstring) {
 
 
 function getPostSearchString($query_text, $match_condition="p.blog_uuid = :q_uuid ", $content_weight_string, $meta_weight_string, $stem_weight_string, $filter_string) {
-    $query_text_hun = "websearch_to_tsquery('en_us_hun_simple', '$query_text')";
+    global $content_text_config;
+    $query_text_hun = "websearch_to_tsquery('$content_text_config', '$query_text')";
     $query_text_meta = $query_text_hun;
     $query_text_literal = "websearch_to_tsquery('simple', '$query_text')";
     $query_text_stem = "websearch_to_tsquery('english_stem_simple', '$query_text')";
@@ -415,8 +416,8 @@ function getPostSearchString($query_text, $match_condition="p.blog_uuid = :q_uui
                         base_results.is_reblog,
                         base_results.hit_rate,
                         base_results.ts_meta,
-                        base_results.en_hun_simple,
-                        (   ts_rank_cd($content_weight_string, base_results.en_hun_simple, $query_text_hun, 21)
+                        base_results.ts_content,
+                        (   ts_rank_cd($content_weight_string, base_results.ts_content, $query_text_hun, 21)
                          + ts_rank_cd($meta_weight_string, base_results.ts_meta, $query_text_meta, 21)
                          ) as score
                             --// fultext rank codes:
@@ -478,7 +479,7 @@ function getInnerSearchString($tsquery_hun, $tsquery_meta, $tsquery_stem, $tsque
             p.blocksb as blocks,
             p.tag_text,
             p.ts_meta,
-            p.en_hun_simple,
+            p.ts_content,
             p.is_reblog,
             p.hit_rate
         FROM 
@@ -487,13 +488,13 @@ function getInnerSearchString($tsquery_hun, $tsquery_meta, $tsquery_stem, $tsque
             $match_condition
             AND
             (
-            p.en_hun_simple @@ q.literal_q
+            p.ts_content @@ q.literal_q
             OR 
             p.ts_meta @@ q.literal_q
             OR
             p.ts_meta @@ q.meta_q
             OR
-            p.en_hun_simple @@ q.en_hun_q
+            p.ts_content @@ q.en_hun_q
             )
             $filter_string";
              //-- //OR p.stems_only @@ $query_text_stem
@@ -506,7 +507,9 @@ class Parser {
     private $index;
     private $language;
 
-    public function __construct($language = 'en_us_hun_simple') {
+    public function __construct($language = null) {
+        global $content_text_config;
+        if($language == null) $language = $content_text_config;
         $this->language = $language;
     }
 

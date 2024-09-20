@@ -46,7 +46,8 @@ $update_nodeStats = $db->prepare(
         last_pinged_nodetime = to_timestamp(:node_ping_time),
         free_space_mb = :free_space_mb,
         estimated_calls_remaining = :estimated_calls_remaining,
-        reliability = LEAST(reliability, :reliability)
+        reliability = LEAST(reliability, :reliability),
+        node_language = :lang
     WHERE node_id = :node_id"
 );
 
@@ -75,7 +76,8 @@ function updateNodeStats($node) {
         "free_space_mb" => $node->free_space_mb,
         "reliability" => $node->reliability,
         "estimated_calls_remaining" => (int)$node->estimated_calls_remaining,
-        "node_ping_time" => $node->time_right_now
+        "node_ping_time" => $node->time_right_now,
+        "lang" => $node->spoke_language ?? 'en'
     ]);
 }
 

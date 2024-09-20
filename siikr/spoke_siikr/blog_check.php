@@ -18,6 +18,7 @@
  * estimated_reavailability: int //null or -1 if the spoke is currently capable of making calls, otherwise, the estimated number of seconds until this spoke is available to make calls again
  * need_help: boolean, // true if some error occurred. false/unset/null otherwise.
  * malformed: boolean // true if some error occurred and it doesn't seem to be on our end.
+ * spoke_language: string //a two character iso-639 language code indicating the language this node is dedicated to. The hub will avoid routing blogs to nodes of the wrong language
  * }
 */
 
@@ -49,6 +50,7 @@ $hr_calls_remaining = $hr_limit - $summary_stat_obj->requests_this_hour;
 $day_calls_remaining = $day_limit - $summary_stat_obj->requests_today;
 $est_calls_remaining = min($hr_calls_remaining, $day_calls_remaining);
 $result["time_right_now"] = $last_stat_obj->req_time;
+$result["spoke_language"] = $language;
 
 if($last_stat_obj->response_code == 429) {    
     if($last_stat_obj?->est_reavailable != null) {

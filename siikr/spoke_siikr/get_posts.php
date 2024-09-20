@@ -48,11 +48,18 @@ else if($id_list != null) {
 
 $stmt = $db->prepare(
     "SELECT c.post_id_i::TEXT as post_id, c.*, 
-    COALESCE(agg.tags, array_to_json(ARRAY[]::integer[])) as tags,
+    COALESCE(agg.tags, array_to_json(ARRAY[]::text[])) as tags,
     COALESCE(mediaagg.media_info, '[]'::json) media
         FROM (
             SELECT 
-                post_id as post_id_i, post_date, blocksb as blocks, tag_text, is_reblog, hit_rate, extract(epoch from post_date)::INT as timestamp
+                post_id as post_id_i, post_date, 
+                blocksb as blocks, tag_text, 
+                is_reblog, 
+                hit_rate, 
+                extract(epoch from post_date)::INT as timestamp,
+                '$content_text_config' as text_config,
+                ts_meta,
+                ts_content as ts_content,
             FROM posts
             WHERE blog_uuid = :blog_uuid
             AND index_version = :index_version
@@ -60,7 +67,7 @@ $stmt = $db->prepare(
             LIMIT :result_limit) as c 
             LEFT JOIN LATERAL
             (SELECT 
-                array_to_json(array_agg(t.tag_id)) as tags
+                array_to_json(array_agg(t.tag_name)) as tags
              FROM 
                 posts_tags pt
              LEFT JOIN 

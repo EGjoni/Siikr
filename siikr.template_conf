@@ -1,6 +1,7 @@
 #!/bin/bash
 #COPY THIS FILE to siikr.conf, then fill in the variables below before running simple_setup.sh
 tumblr_API_consumer_key="YOUR TUMBLR API CONSUMER KEY GOES HERE"
+rate_limited=true
 pg_pass= #your intended db password here
 #db_disk="UNCOMMENT THIS LINE AND REPLACE THIS WITH A CUSTOM DIRECTORY LOCATION IF YOU WANT POSTGRES TO STORE THE DATABASES SOMEWHERE OTHER THEN YOUR MAIN SYSTEM DRIVE"
 document_root="/var/www/" #location you want to install siikr into
@@ -8,9 +9,14 @@ document_root="/var/www/" #location you want to install siikr into
 siikr_domain="YOUR SIIKR DOMAIN GOES HERE" #for example, if you intend to host siikr on siikr.geodudecities.com, then you would enter 'siikr.geodudecities.com'
 #you may contact antinegationism or post a thread on the github if you don't have a domain for your siikr node, and one can be provided for your the ip address of your server.
 
+content_text_config="en_us_hun_simple" #the name of the postgres language text config you intend to use. Make sure to actually CREATE the config though.
+language="en" #a two character iso-639 language code indicating the language this node is dedicated to. Eventually, if a hub can correctly determine the language of a blog, it will avoid routing blogs to nodes of the wrong language
+default_meta=false #if set to true, this siikr_node will behave as a hub by default when visiting index.php. This has some overhead, so best leave to false unless you really want to be hub. 
+
 
 min_disk_headroom=250000000 #(default ~=2.5GB) how much free space (in bytes) to ensure the postgres disk has to ease maintenance. Blogs will not be indexed if siikr estimates that doing so would result in insufficient headroom 
 php_dir="/usr/bin/php" #location of your active php install
 php_user="www-data" #the user your php server runs as
 pg_user="siikrweb" #postgres username that database access will be performed as.
 siikr_db="siikrdb" #name of siikr database to create
+hub_url="https://siikr.giftedapprentice.com/meta_siikr/"; # if $default_meta is set to true, this will be ignored and resolve to whatever $siikr_domain specifies, in effect indicating this node is its own hub

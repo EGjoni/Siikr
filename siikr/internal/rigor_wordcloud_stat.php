@@ -59,7 +59,7 @@ function buildQuery($filterOn, $into_lexeme_blogstats_table) {
                     :blog_uuid, 
                     :vec_colum, -- name of the vector column to get stats for, see below
                     :fields, --uses the lexeme weight fields to determine which text type to incorporate. 
-                            --for en_hun_simple: aet to 'a' for self text, set to 'c' for trail text. Do not include b or d, as these are weights for user mentions
+                            --for ts_content: aet to 'a' for self text, set to 'c' for trail text. Do not include b or d, as these are weights for user mentions
                             --for ts_meta (if incorporating stats about things blogged about), 'a' = tag_text, 'b' = self media text, 'c' = trail media text. Do not use 'd', as it is reserved for usernames
                     :posts_after::TIMESTAMP --limit query to posts archived after this time
                     

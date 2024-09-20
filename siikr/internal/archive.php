@@ -116,7 +116,7 @@ try {
     /**columns that don't need us to do extra junk*/
     $unprocessed_columns = ["blog_uuid", "tag_text", "index_version"];
     $unprocessed_str = ""; foreach($unprocessed_columns as $col) $unprocessed_str .= ", :$col as $col";
-    $insert_post_column_list = ["post_date", "blocksb", "is_reblog", "hit_rate", "en_hun_simple", "ts_meta", ...$unprocessed_columns];
+    $insert_post_column_list = ["post_date", "blocksb", "is_reblog", "hit_rate", "ts_content", "ts_meta", ...$unprocessed_columns];
     $withrec = "WITH rec AS (SELECT :post_id::BIGINT AS post_id, 
                 to_timestamp(:post_date::INT) AS post_date,
                 :blocksb::JSON AS blocksb,
@@ -126,24 +126,24 @@ try {
                 :has_ask::has_content as has_ask, :has_images::has_content as has_images, :has_video::has_content as has_video, 
                 :has_audio::has_content as has_audio $unprocessed_str, ";
     $post_postinsert = "
-    setWeight(to_tsvector('en_us_hun_simple', :tag_text), 'A')
-    || setWeight(to_tsvector('en_us_hun_simple', :self_media_text), 'B') 
-    || setWeight(to_tsvector('en_us_hun_simple', :trail_media_text), 'C') 
+    setWeight(to_tsvector('$content_text_config', :tag_text), 'A')
+    || setWeight(to_tsvector('$content_text_config', :self_media_text), 'B') 
+    || setWeight(to_tsvector('$content_text_config', :trail_media_text), 'C') 
     || setWeight(to_tsvector('simple', :trail_usernames), 'D') as ts_meta
     )";
    
     //slowish variant when usermentions are included
-    $nomenA = "setWeight(to_tsvector('en_us_hun_simple', :self_no_mentions), 'A')::TEXT"; 
-    $wmenB = "(SELECT replace(setWeight(to_tsvector('en_us_hun_simple', :self_with_mentions), 'B')::TEXT, '@siikr.tumblr.com', ''))::TEXT";
-    $nomenC = "setWeight(to_tsvector('en_us_hun_simple', :trail_no_mentions), 'C')::TEXT";
-    $wmenD = "(SELECT replace(setWeight(to_tsvector('en_us_hun_simple', :trail_with_mentions), 'D')::TEXT, '@siikr.tumblr.com', ''))::TEXT";
+    $nomenA = "setWeight(to_tsvector('$content_text_config', :self_no_mentions), 'A')::TEXT"; 
+    $wmenB = "(SELECT replace(setWeight(to_tsvector('$content_text_config', :self_with_mentions), 'B')::TEXT, '@siikr.tumblr.com', ''))::TEXT";
+    $nomenC = "setWeight(to_tsvector('$content_text_config', :trail_no_mentions), 'C')::TEXT";
+    $wmenD = "(SELECT replace(setWeight(to_tsvector('$content_text_config', :trail_with_mentions), 'D')::TEXT, '@siikr.tumblr.com', ''))::TEXT";
     //$stem_tags = "setWeight(to_tsvector('english_stem_simple', :tag_text), 'A') || (SELECT replace(setWeight(to_tsvector('english_stem_simple', :self_with_mentions), 'B')::TEXT, '@siikr.tumblr.com', ''))::TEXT";
     $doesMention = "
     ($nomenA || ' ' || $wmenB)::tsvector || 
-    ($nomenC || ' ' || $wmenD)::tsvector as en_hun_simple,
+    ($nomenC || ' ' || $wmenD)::tsvector as ts_content,
     ";
     //faster variant when no user mentions
-    $noMention = "setWeight(to_tsvector('en_us_hun_simple', :self_text_regular), 'A') || setWeight(to_tsvector('en_us_hun_simple', :trail_text_regular), 'C') as en_hun_simple,";
+    $noMention = "setWeight(to_tsvector('$content_text_config', :self_text_regular), 'A') || setWeight(to_tsvector('$content_text_config', :trail_text_regular), 'C') as ts_content,";
     
     
    
@@ -165,7 +165,7 @@ try {
     $stmt_insert_tag = $db->prepare("INSERT INTO tags (tag_name, tag_simple_ts_vector) VALUES (:tag_text, to_tsvector('simple', :tag_text)) ON CONFLICT (tag_name) DO UPDATE SET tag_name = Excluded.tag_name RETURNING tag_id");
     $stmt_insert_posts_tags = $db->prepare("INSERT INTO posts_tags (blog_uuid, post_id, tag_id) VALUES(?, ?, ?) ON CONFLICT DO NOTHING");
     
-    $stmt_insert_media = $db->prepare( //My kingdom! My kingdom for unique multi-column hash constraint support!
+    $stmt_upsert_media = $db->prepare( //My kingdom! My kingdom for unique multi-column hash constraint support!
         "WITH record AS (
         SELECT ROW(:media_url, :preview_url, LEFT(:title, 250), LEFT(:description, 1000))::media_info AS r), 
         existing AS (SELECT media_id FROM $media_table WHERE media_meta = (SELECT r FROM record) LIMIT 1), 
@@ -207,23 +207,28 @@ try {
     
     //$oldest_server_post = call_tumblr($blog_name, 'posts', ['limit' => 1, 'npf' => 'true', 'sort' => 'asc'])->posts[0];
     
+    function get_media_id(&$media_item) {
+        global $stmt_upsert_media;
+        $title = property_exists($media_item, "title") && $media_item->title != null ? substr($media_item->title, 0, 250) : NULL;
+        $description =  property_exists($media_item, "description") && $media_item->description != null ? substr($media_item->description, 0, 1000) : NULL;
+        if($title != null) $title = ensure_valid_string($title);
+        if($description != null) $description = ensure_valid_string($description);
+        $preview_url = property_exists($media_item, "preview_url") && $media_item->preview_url != null ? $media_item->preview_url : NULL;
+        $will_insert = 
+        ["media_url" => $media_item->media_url, 
+        "preview_url"=> $preview_url, 
+        "title" => $title, 
+        "description" => $description, 
+        "media_type" => $media_item->type];
+        $media_id = $stmt_upsert_media->exec($will_insert)->fetchColumn();
+        return $media_id;
+    }
 
     function insert_media(&$db_post_obj, &$media_list) {
-        global $stmt_insert_media, $possible_encodings;
+        global $possible_encodings;
         foreach ($media_list as &$med) {
             $media_item = (object)$med;
-            $title = property_exists($media_item, "title") ? substr($media_item->title, 0, 250) : NULL;
-            $description =  property_exists($media_item, "description") ? substr($media_item->description, 0, 1000) : NULL;
-            if($title != null) $title = ensure_valid_string($title);
-            if($description != null) $description = ensure_valid_string($description);
-            $preview_url = property_exists($media_item, "preview_url") ? $media_item->preview_url : NULL;
-            $will_insert = 
-            ["media_url" => $media_item->media_url, 
-            "preview_url"=> $preview_url, 
-            "title" => $title, 
-            "description" => $description, 
-            "media_type" => $media_item->type];
-            $media_id = $stmt_insert_media->exec($will_insert)->fetchColumn();
+            $media_id = get_media_id($media_item);
             $med["db_id"] = $media_id;
             $db_post_obj->media_by_id[$media_id] = $media_item->media_url;
             $db_post_obj->media_by_url[$media_item->media_url][] = $media_id;
@@ -699,8 +704,8 @@ function queueEventToAll($searches_array, $event_str, $message) {
  *          - Create version S_a of the string where every username or mention is replaced with a stopword.
  *          - Create version S_b of the string, where every username or mention has '@siikr.tumblr.com' appended to it.
  *          - Create a tsvector by 
- *              -- (setWeight(to_tsvector('en_us_hun_simple', S_a), 'A')::TEXT || ' ' || 
- *                  (SELECT replace(setWeight(to_tsvector('en_us_hun_simple', S_b, 'B')::TEXT), '@siikr.tumblr.com', ''))::tsvector 
+ *              -- (setWeight(to_tsvector('$content_text_config', S_a), 'A')::TEXT || ' ' || 
+ *                  (SELECT replace(setWeight(to_tsvector('$content_text_config', S_b, 'B')::TEXT), '@siikr.tumblr.com', ''))::tsvector 
  *      
  *      All of this is to say, that this entry contains two strings. 
  *      S_a, and S_b. Both are necessary, you should use them, and furthermore if you are modifying siikr to better support a non-english language, you should make sure to replace the stopword with something that is a stopword in whatever dictionary your language uses 

@@ -1236,7 +1236,8 @@ CREATE TABLE public.siikr_nodes (
     last_pinged_ourtime timestamp without time zone,
     reliability double precision DEFAULT 10,
     estimated_calls_remaining integer DEFAULT 5000,
-    last_pinged_nodetime timestamp without time zone DEFAULT now()
+    last_pinged_nodetime timestamp without time zone DEFAULT now(),
+    node_language character(2) DEFAULT 'en'::bpchar
 );
 
 
@@ -1282,7 +1283,7 @@ CREATE VIEW public.peek_cbnm AS
 CREATE TABLE public.posts (
     post_id bigint NOT NULL,
     blog_uuid character varying(64),
-    en_hun_simple tsvector,
+    ts_content tsvector,
     ts_meta tsvector,
     tag_text text,
     post_date timestamp without time zone,
@@ -1305,10 +1306,10 @@ CREATE TABLE public.posts (
 
 
 --
--- Name: COLUMN posts.en_hun_simple; Type: COMMENT; Schema: public; Owner: -
+-- Name: COLUMN posts.ts_content; Type: COMMENT; Schema: public; Owner: -
 --
 
-COMMENT ON COLUMN public.posts.en_hun_simple IS 'contains "tags, self, trail, images" as A, B, C, D';
+COMMENT ON COLUMN public.posts.ts_content IS 'contains "tags, self, trail, images" as A, B, C, D';
 
 
 --
@@ -1353,7 +1354,7 @@ CREATE VIEW public.peek_update_progress AS
 CREATE VIEW public.post_column_sizes AS
  SELECT pg_size_pretty(sum((pg_column_size(posts.post_id) * (((100)::double precision / (current_setting('m.r'::text))::double precision))::bigint))) AS post_id_size,
     pg_size_pretty(sum((pg_column_size(posts.blog_uuid) * (((100)::double precision / (current_setting('m.r'::text))::double precision))::bigint))) AS blog_uuid_size,
-    pg_size_pretty(sum((pg_column_size(posts.en_hun_simple) * (((100)::double precision / (current_setting('m.r'::text))::double precision))::bigint))) AS simple_ts_vector_size,
+    pg_size_pretty(sum((pg_column_size(posts.ts_content) * (((100)::double precision / (current_setting('m.r'::text))::double precision))::bigint))) AS simple_ts_vector_size,
     pg_size_pretty(sum((pg_column_size(posts.blocksb) * (((100)::double precision / (current_setting('m.r'::text))::double precision))::bigint))) AS blocksb_size,
     pg_size_pretty(sum((pg_column_size(posts.ts_meta) * (((100)::double precision / (current_setting('m.r'::text))::double precision))::bigint))) AS ts_meta_size,
     pg_size_pretty(sum((pg_column_size(posts.tag_text) * (((100)::double precision / (current_setting('m.r'::text))::double precision))::bigint))) AS tag_text_size,
@@ -1896,7 +1897,7 @@ CREATE INDEX idx_posts_tags_blog_uuid ON public.posts_tags USING hash (blog_uuid
 -- Name: idxsh_vec; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX idxsh_vec ON public.posts USING gin (en_hun_simple);
+CREATE INDEX idxsh_vec ON public.posts USING gin (ts_content);
 
 
 --
