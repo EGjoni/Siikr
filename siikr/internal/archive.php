@@ -351,7 +351,7 @@ try {
 
                     // Insert post into posts table
                     $tag_rawtext = implode('\n#', $tags);
-                    if(strlen($tag_rawtext) > 0) $tag_rawtext = "#$tag_rawtext";
+                    if(mb_strlen($tag_rawtext) > 0) $tag_rawtext = "#$tag_rawtext";
                     $tag_tstext = implode('\n', $tags);
 
                     $db_post_obj->media_by_id = [];
@@ -390,7 +390,7 @@ try {
                             $stmt_mention_insert_post->exec($common_inserts);
                         } else {
                             $common_inserts["self_text_regular"] = $db_post_obj->self_text_regular;
-                            $common_inserts["trail_text_regular"] = $db_post_obj->self_text_regular;
+                            $common_inserts["trail_text_regular"] = $db_post_obj->trail_text_regular;
                             $stmt_nomention_insert_post->exec($common_inserts);
                         }
                     } catch(Exception $e) {
@@ -711,9 +711,4 @@ function queueEventToAll($searches_array, $event_str, $message) {
  *      S_a, and S_b. Both are necessary, you should use them, and furthermore if you are modifying siikr to better support a non-english language, you should make sure to replace the stopword with something that is a stopword in whatever dictionary your language uses 
  * ]
  **/
-
-
-
-
-
 ?>

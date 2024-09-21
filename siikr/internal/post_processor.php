@@ -56,6 +56,20 @@ function getHitRate($post, $isReblog) {
     return $adjustedCount/($timeRange+1);
 }
 
+
+$formatting_map = [
+    "bold" => "b",
+    "small" => "s",
+    "italic" => "i",
+    "strikethrough" => "str",
+    "color" => "col", 
+    "link" => "href",
+    "href" => "href",
+    "mention" => "ment",
+    "ment"=> "ment"
+];
+
+
 function extract_db_content_from_post($post) {
     global $possible_encodings;
     $soFar = 
@@ -174,7 +188,7 @@ function extract_blocks_from_content($subpost, &$soFar, $mode=0b01) {
                     
                     $generatedMention = (object)[];
                     $generatedMention->start = 0;
-                    $insertionLength = strlen($asking_blog_info->name." ");
+                    $insertionLength = mb_strlen($asking_blog_info->name." ");
                     $generatedMention->end = $insertionLength-1;
                     $generatedMention->type = "mention";
                     $generatedMention->blog = $asking_blog_info;
@@ -381,7 +395,7 @@ function convert_to_dual_form($block, &$soFar) {
     $augmentAdded = 0;
     $content_text_regular = $block->text; 
     $augmentWord = '@siikr.tumblr.com';
-    $augmentLength = strlen($augmentWord);
+    $augmentLength = mb_strlen($augmentWord);
     $inline_links = [];
     $mentions = [];
     if(isset($block->formatting)) {
@@ -414,21 +428,21 @@ function convert_to_dual_form($block, &$soFar) {
                 continue;       
             $soff = ($mentionObj->s + ($stopRemove + $stopAdded));
             $soff2 = ($mentionObj->s-1) + ($stopRemove + $stopAdded);
-            if($soff >=0  && $block->text[$soff] != '@' && $block->text[$soff2] == '@') {
+            if($soff >=0  && uc($block->text, $soff) != '@' && uc($block->text, $soff2) == '@') {
                 $mentionObj->s--;
             }
             $removeLength = $mentionObj->e - $mentionObj->s; 
-            $removeText = substr($block->text, $mentionObj->s, $removeLength);                
+            $removeText = usub($block->text, $mentionObj->s, $removeLength);                
             $stopstart = $mentionObj->s + ($stopRemove + $stopAdded); 
             $stopRemove -= $removeLength;
-            $content_text_stopword_mention = substr_replace($content_text_stopword_mention, $stopword, $stopstart, $removeLength);
-            $stopAdded += strlen($stopword); 
-            if(substr($removeText, 0, 1) == '@') { 
+            $content_text_stopword_mention = usubstr_replace($content_text_stopword_mention, $stopword, $stopstart, $removeLength);
+            $stopAdded += mb_strlen($stopword); 
+            if(uc($removeText, 0) == '@') { 
                 //conditionally remove the @ prefix and update the augment offsets if needed
-                $content_text_augmented_mention=substr_replace($content_text_augmented_mention, '', $augmentAdded+$mentionObj->s, 1);
+                $content_text_augmented_mention= usubstr_replace($content_text_augmented_mention, '', $augmentAdded+$mentionObj->s, 1);
                 $augmentAdded--;
             }
-            $content_text_augmented_mention = substr_replace($content_text_augmented_mention, $augmentWord, $mentionObj->e+$augmentAdded, 0);
+            $content_text_augmented_mention = usubstr_replace($content_text_augmented_mention, $augmentWord, $mentionObj->e+$augmentAdded, 0);
             $augmentAdded += $augmentLength;
             $inline_links[] = normalizeURL($mentionObj->url);
             unset($mentionObj->t, $mentionObj->s, $mentionObj->e);
@@ -572,17 +586,7 @@ function pruneSubPostToJSONB($post, &$db_post_obj) {
 }
 
 
-$formatting_map = [
-    "bold" => "b",
-    "small" => "s",
-    "italic" => "i",
-    "strikethrough" => "str",
-    "color" => "col", 
-    "link" => "href",
-    "href" => "href",
-    "mention" => "ment",
-    "ment"=> "ment"
-];
+
 /**
  * returns a pruned version of the formatting hint array on the provided content block
  * quirks: 
@@ -682,18 +686,18 @@ function is_effective_mention($block, $f_rule) {
         }
         if($makeMention) {
             
-            $linktext = substr($text, $f_rule->start, $f_rule->end - $f_rule->start);
+            $linktext = usub($text, $f_rule->start, $f_rule->end - $f_rule->start);
             $username_pos_start = strpos($linktext, $blog_name);
             $raw_url_pos_start = strpos($linktext, "blr.co");
             if($username_pos_start !== false && $raw_url_pos_start === false) {
                 $username_pos_start = strpos($text, $linktext) + $username_pos_start; //avoid any potential mentions of the username outside of the link range 
-                $username_pos_end = $username_pos_start + strlen($blog_name);
+                $username_pos_end = $username_pos_start + mb_strlen($blog_name);
                 if($text[$username_pos_start] != '@' && $text[$username_pos_start-1] == '@')
                     $username_pos_start--; 
                 $result = (object)[]; 
                 $result->t = 'mention';
                 $result->s = $username_pos_start;
-                $result->e = $username_pos_start + strlen($blog_name); 
+                $result->e = $username_pos_start + mb_strlen($blog_name); 
                 $result->url = normalizeUrl($blog_url);
                 $result->name = $blog_name;
                 return $result;

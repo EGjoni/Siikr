@@ -127,7 +127,7 @@ function sendByStreamedSet($db, $blog_info, $search_query) {
     global $offset; 
     global $limit;
     $stmt = $db->prepare($search_query, array(\PDO::ATTR_CURSOR => \PDO::CURSOR_SCROLL));
-    //$blog_info->debug_query = $stmt->getBuilt(["q_uuid" => $blog_info->blog_uuid]);
+    $blog_info->debug_query = $stmt->debug(["q_uuid" => $blog_info->blog_uuid], true);
     //$debugStat = explode(" FROM ", $stmt); 
     //foreach($debugStat as &$stat) $stat = "FROM $stat";
     $result = $stmt->exec(["q_uuid" => $blog_info->blog_uuid], true);

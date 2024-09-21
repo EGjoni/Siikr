@@ -33,6 +33,7 @@ $get_ranges = $db->prepare(
     WHERE blog_uuid = :blog_uuid 
     AND index_version = :index_version 
     AND $time_stmt
+    ORDER by post_date desc
     LIMIT :result_limit");
 
 $post_ids = $get_ranges->exec($args)->fetchAll(PDO::FETCH_OBJ);
