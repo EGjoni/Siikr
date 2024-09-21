@@ -465,12 +465,14 @@ async function __reSort(sortMode, updateURL=true, doSeek = true, isInsuranceChec
 	var selectedTags = getCurrentlySelectedTags();
 	await flip([...elems], 
 		()=>{
-			for(var i=0; i<removedElems.length; i++) { 
+			for(var i=0; i<removedElems.length; i++) {
+				removedElems[i].resultContent._scrollTop = removedElems[i].resultContent.scrollTop;
 				removedElems[i].remove();
 			}
 			for(var i=0; i<addedElems.length; i++) { 
 				updateConstraints(addedElems[i], selectedTags);
-				resultContainer.appendChild(addedElems[i]);				
+				resultContainer.appendChild(addedElems[i]);
+				addedElems[i].resultContent.scrollTop = addedElems[i].resultContent._scrollTop;
 			}
 		},
 		{
@@ -715,7 +717,8 @@ async function attachPending(attachCount) {
 		()=>{
 			for(var i=0; i<toAttach.length; i++) { 
 				//updateConstraints(currentResults[i].element, selectedTags);
-				resultContainer.appendChild(toAttach[i]);				
+				resultContainer.appendChild(toAttach[i]);
+				toAttach[i].resultContent.scrollTop = toAttach[i]?.resultContent._scrollTop ?? 0;
 			}
 		},
 		{
@@ -740,6 +743,7 @@ async function replaceAndResort(toReSort, toReplace) {
 		onElems,
 		()=>{
 			for(var i =0; i<toReplace.length; i++) {
+				toReplace[i].element.resultContent._scrollTop = toReplace[i].element.resultContent.scrollTop;
 				toReplace[i].element.remove();
 				toReSort.push(toReplace[i]);
 			}
@@ -747,7 +751,8 @@ async function replaceAndResort(toReSort, toReplace) {
 			for(var i =0; i < toReSort.length; i++) {
 				var res = toReSort[i];
 				//if(res.appearanceIndex == currentResults.length-1 || currentResults[res.appearanceIndex+1].element.parentElement == null) {
-					resultContainer.appendChild(res.element);						
+					resultContainer.appendChild(res.element);		
+					res.element.resultContent.scrollTop = res.element.resultContent._scrollTop;				
 				//} else {
 				//	var cur = currentResults[res.appearanceIndex+1];
 				//	resultContainer.insertBefore(res.element, cur.element);
@@ -796,6 +801,9 @@ async function replaceAndResort(toReSort, toReplace) {
 function hydrateResultElement(data, element) {
 	var post = JSON.parse(data.blocks);
 	data.blocks = post;
+	let resultContent = element.querySelector(".result-siikr");
+	element.resultContent = resultContent;
+	element.resultContent._scrollTop = 0;
 	var trailContainerElem = element.querySelector(".result-trail");
 	trailContainerElem.innerHTML = '';
 	var selfContainerElem = element.querySelector(".result-self");

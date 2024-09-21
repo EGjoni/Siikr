@@ -81,6 +81,7 @@ $stmt = $db->prepare(
             WHERE $selection_stmt
             AND blog_uuid = ?
             AND index_version = ?
+            ORDER by post_date desc
             LIMIT ?) as c 
             LEFT JOIN LATERAL
             (SELECT 

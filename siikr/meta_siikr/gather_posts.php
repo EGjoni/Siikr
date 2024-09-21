@@ -100,11 +100,15 @@ $consolidated_posts = [];
 foreach($spoke_posts as $spoke_id => $post_arr) {
     $post_ids = array_keys($post_arr);
     if(count($post_ids) > 0) {
+        $json_encoded = json_encode($post_ids);
         $http_params = [
             'ignore_errors' => true,
             'method' => 'POST',
-            'header' => 'Content-Type:application/json',
-            'content' => json_encode($payload)];
+            'header' => [
+                'Content-Type:application/json',
+                'Content-Length: ' . strlen($json_encoded)
+            ],
+            'content' => $json_encoded];
         $options = ['http' => $http_params];
         $spoke = $spokes_by_id[$spoke_id];
         $http_query = http_build_query(["blog_uuid"=>$blog_uuid, "version" => $index_version_requested]);

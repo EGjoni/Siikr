@@ -724,9 +724,4 @@ function queueEventToAll($searches_array, $event_str, $message) {
  *      S_a, and S_b. Both are necessary, you should use them, and furthermore if you are modifying siikr to better support a non-english language, you should make sure to replace the stopword with something that is a stopword in whatever dictionary your language uses 
  * ]
  **/
-
-
-
-
-
 ?>
