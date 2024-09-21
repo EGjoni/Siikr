@@ -434,7 +434,7 @@ async function __reSort(sortMode, updateURL=true, doSeek = true, isInsuranceChec
 	let startElemCount = resultContainer.children.length;
 
 	let i=0;
-	while(i<Math.min(startElemCount, max)) {
+	while(i<Math.max(startElemCount, max)) {
 		elems.add(currentResults[i].element);
 		//if(!existingElems.has(currentResults[i].element)) {
 			addedElems.add(currentResults[i].element);		

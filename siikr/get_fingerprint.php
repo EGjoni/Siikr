@@ -3,13 +3,13 @@ require_once 'internal/globals.php';
 header('Content-Type: application/json');
 ob_start('gz_handler');
 
-$db_user = "www-data";
+//$db_user = "www-data";
 $blog_uuid = $_GET['blog_uuid'];
 $limit = $_GET["limit"] ?? 100;
 
 if ($blog_uuid == null) {
 	$userInfo = posix_getpwuid(posix_geteuid());
-	$db_user = $userInfo["name"];
+	//$db_user = $userInfo["name"];
 }
 $db = new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
 

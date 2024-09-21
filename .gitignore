@@ -3,6 +3,7 @@ siikr/dev/**
 siikr/auth/**
 siikr/internal/disks.php
 siikr/management/archive_blogs.php
+siikr/routing/msgrouter.service
 tmp_schema
 node_specific/**
 node_specific

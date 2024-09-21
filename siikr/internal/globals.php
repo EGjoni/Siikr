@@ -9,6 +9,32 @@ function ensure_valid_string($string) {
     $detected_encoding = mb_detect_encoding($string, $possible_encodings, true);
     return mb_convert_encoding($string, 'UTF-8', $detected_encoding);
 }
+
+/**
+ * return a utf8 substring at the given position of the givne length 
+ * @param haystack
+ * @param position
+ * @param length
+**/
+function usub($str, $start, $length) {
+    return mb_substr($str, $start, $length, 'UTF-8'); 
+}
+
+function usubstr_replace($original, $replacement, $position, $length) {
+    $startString = mb_substr($original, 0, $position, 'UTF-8');
+    $endString = mb_substr($original, $position + $length, mb_strlen($original), 'UTF-8');
+    return $startString . $replacement . $endString;
+}
+
+/**
+ * returns the utf8 character at the given position 
+ * @param haystack
+ * @param position
+*/
+function uc($str, $pos) {
+    return mb_substr($str, $pos, 1, 'UTF-8');
+}
+
 /**Like PDOStatement but with an exec convenience function that returns the statement again for easy chaining with fetch calls
  * An error is thrown on failure instead of returning false
 */
@@ -98,6 +124,13 @@ $DENUM = [
     1 => 'SELF',
     2 => 'TRAIL',
     3 => 'BOTH', //indicates that both must have images, not that either has them 
+];
+
+$RENUM = [ 
+    'FALSE' => 0, 
+    'SELF' => 1,
+    'TRAIL' => 2,
+    'BOTH' => 3, //indicates that both must have images, not that either has them 
 ];
 
 
@@ -634,7 +667,7 @@ function nameCorrespondenceObj($db, $userProvidedName) {
 function resolve_uuid($db, $blogNameFromUser, $blogInfoFromTumblr, $blogNameFromTumblr) {
     $return_result = (object)[];
     $blogUuidFromTumblr = $blogInfoFromTumblr->uuid; 
-    $tumblr_posts_reported = $blogInfoFromTumblr->total_posts_reported;
+    $tumblr_posts_reported = $blogInfoFromTumblr->total_posts;
     try {
         $stmt = $db->prepare("SELECT blog_uuid FROM blogstats WHERE blog_name = :blog_name");
         $stmt->execute(['blog_name' => $blogNameFromUser]);
@@ -669,6 +702,10 @@ function resolve_uuid($db, $blogNameFromUser, $blogInfoFromTumblr, $blogNameFrom
         } elseif ($existingBlogUuidForName == $blogUuidFromTumblr) {
             $return_result->name = $blogNameFromTumblr;
             $return_result->uuid = $blogUuidFromTumblr;
+            $update_post_count = $db->prepare("UPDATE blogstats 
+                        SET serverside_posts_reported = :tumblr_posts_reported
+                        WHERE blog_uuid = :blog_uuid");
+            $update_post_count->exec(["blog_uuid" => $blogUuidFromTumblr, "tumblr_posts_reported" => $tumblr_posts_reported]);
         } elseif ($existingBlogUuidForName != NULL && $blogUuidFromTumblr == NULL) {
             // Situation 4
             $new_blogname_info = call_tumblr($existingBlogUuidForName, "info", [], true);

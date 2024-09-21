@@ -121,6 +121,7 @@ try {
                 to_timestamp(:post_date::INT) AS post_date,
                 :blocksb::JSON AS blocksb,
                 :is_reblog::BOOLEAN AS is_reblog,
+                :deleted::BOOLEAN AS deleted,
                 :hit_rate::FLOAT AS hit_rate,
                 :has_text::has_content as has_text, :has_link::has_content as has_link, :has_chat::has_content as has_chat, 
                 :has_ask::has_content as has_ask, :has_images::has_content as has_images, :has_video::has_content as has_video, 
@@ -180,6 +181,7 @@ try {
     $get_newest_obsolete_post =  $db->prepare("SELECT post_id, EXTRACT(epoch FROM post_date)::INT as timestamp, index_version FROM posts where blog_uuid = :blog_uuid AND index_version < '$archiver_version' 
                         AND deleted = FALSE 
                         AND post_date < to_timestamp(:max_date::INT) ORDER BY post_date DESC LIMIT 1");
+    $get_newest_known_post_id = $db->prepare("SELECT post_id FROM posts where blog_uuid = :blog_uuid ORDER BY post_date DESC LIMIT 1");
     
     
     $stmt_get_post_info = $db->prepare("SELECT post_id as id, EXTRACT(epoch FROM post_date)::INT as timestamp, index_version FROM posts where post_id = :post_id");
@@ -187,8 +189,8 @@ try {
     $set_blog_success_status = $db->prepare("UPDATE blogstats SET success = ?, is_indexing = FALSE WHERE blog_uuid = ?");
     
     // Get the most_recent_post_id and post_id_last_indexed from the blogstats table
-    $most_recent_post_id = $db_blog_info->most_recent_post_id;
-    $most_recent_post_info = $stmt_get_post_info->exec([$most_recent_post_id])->fetch(PDO::FETCH_OBJ);
+    $most_recent_post_id = $db_blog_info->most_recent_post_id ?? $get_newest_known_post_id->exec(["blog_uuid"=>$blog_uuid])->fetchColumn();
+    $most_recent_post_info = $most_recent_post_id ? $stmt_get_post_info->exec([$most_recent_post_id])->fetch(PDO::FETCH_OBJ) : null;
     if($db_blog_info->time_last_indexed != null) {
         $post_id_last_indexed = $db_blog_info->post_id_last_indexed;
         $post_id_last_attempted = $db_blog_info->post_id_last_attempted;
@@ -235,6 +237,59 @@ try {
         }
     }
 
+    function notify_search_results($post) {
+        global $db, $searches_array, $archiving_status, $disk_use;
+        $post_searches_results = execAllSearches($db, $searches_array, "p.post_id = :post_id", ["post_id" => $post->post_id]);
+        $listener_result_map = [];
+
+        $archiving_status->disk_used = $disk_use;
+        
+        $__arc_stat = serialize($archiving_status);
+        $arc_stat = unserialize($__arc_stat);
+
+        foreach($post_searches_results as $post_result_cont) {
+            $post_result = $post_result_cont->results;
+            if($post_result != false) {
+                $post_result->tags = json_decode($post_result->tags);
+                $arc_stat->as_search_result = [$post_result];
+            } else {$arc_stat->as_search_result = null;}
+            $arc_stat->isUpgrade = $isUpgrade;
+            queueEvent("INDEXEDPOST!$post_result_cont->search_id", $arc_stat);
+        }
+        fireEventQueue();
+    }
+
+    function notify_tags($tags, $post_id) {
+        global $db, $archiving_status, $disk_use, $blog_uuid, $resolve_queries, $abandonLease,
+        $stmt_insert_posts_tags, $searches_array, $stmt_insert_tag;
+        $__arc_stat = serialize($archiving_status);
+        // Insert tags into tags table and create relations in posts_tags table
+        foreach ($tags as $tag) {
+            if(check_delete($tag, $archiving_status->indexed_this_time, $blog_uuid, $db)) {
+                $archiving_status->disk_used = $disk_use;
+                $archiving_status->content = "Deleting blog by request of post <a href='https://".$server_blog_info->blog->name.".tumblr.com/$post_id'>$post_id</a>, please wait...";
+                queueEventToAll($searches_array, "FINISHEDINDEXING!", $archiving_status);                  
+                delete_blog($tag, $archiving_status->indexed_this_time, $blog_uuid, $db);
+                $archiving_status->content = "Blog deleted. Goodbye.";
+                $archiving_status->deleted = true;                       
+                queueEventToAll($searches_array, "FINISHEDINDEXING!", $archiving_status);
+                $resolve_queries->execute(["blog_uuid" => $blog_uuid]);
+                $abandonLease->execute(["leader_uuid" => $archiver_uuid]);
+                $db->commit();
+                exit;
+            }
+            $tagid = $stmt_insert_tag->exec(["tag_text" => $tag])->fetchColumn();
+            $stmt_insert_posts_tags->exec([$blog_uuid, $post_id, $tagid]);
+            $arc_stat = unserialize($__arc_stat);
+            $arc_stat->newTag = (object)[]; 
+            $arc_stat->newTag->tag_id = $tagid;
+            $arc_stat->newTag->tagtext = $tag;
+            $arc_stat->newTag->user_usecount = 1;
+            $arc_stat->disk_used = $disk_use;
+            queueEventToAll($searches_array, "INDEXEDTAG!", $arc_stat);
+        }
+    }
+
     /**
      * todo: for wordclouds, this function will specify that a blog should be completely removed from the global
      * wordcloud statistics and analyzed from scratch (used on index upgrades as they can substantiallly alter the data)
@@ -249,9 +304,7 @@ try {
     $loop_count = 0;
     $upgradeCount = 0; //counts number of posts that have been upgraded
 
-
-    /**LOGIC: 
-     * 
+    /**LOGIC:
      * Create a queue of potential gaps (posts before which we might be missing some post), with null indicating we wish to begin from the very most recent post.
      * 
      * If tumblr ever responds that there are no earlier posts, or we encounter a post we already indexed, pop the queue to begin indexing from the next gap 
@@ -265,9 +318,12 @@ try {
     $response_post_num = 0;
     $limit_start = 50;
     require_once 'adopt_blog.php';
-    /*gather_foreign_posts($blog_uuid, $archiver_version, $this_server_url, 
+    $last_adopted = gather_foreign_posts($blog_uuid, $archiver_version, $this_server_url, 
                         $oldest_post_indexed_info?->timestamp ?? null, 
-                        $most_recent_post_info?->timestamp ?? null);*/
+                        $most_recent_post_info?->timestamp ?? null);
+    if($last_adopted != null) {
+        array_push($gap_queue, $last_adopted);
+    }
     do {
         $before_info = array_pop($gap_queue);
         $before_time = $before_info == null? null:$before_info->timestamp;
@@ -351,7 +407,7 @@ try {
 
                     // Insert post into posts table
                     $tag_rawtext = implode('\n#', $tags);
-                    if(strlen($tag_rawtext) > 0) $tag_rawtext = "#$tag_rawtext";
+                    if(mb_strlen($tag_rawtext) > 0) $tag_rawtext = "#$tag_rawtext";
                     $tag_tstext = implode('\n', $tags);
 
                     $db_post_obj->media_by_id = [];
@@ -379,7 +435,8 @@ try {
                         "tag_text" => $tag_rawtext,
                         "index_version" => $archiver_version,
                         "is_reblog" => $db_post_obj->is_reblog,
-                        "hit_rate" => $db_post_obj->hit_rate];
+                        "hit_rate" => $db_post_obj->hit_rate,
+                        "deleted" => 'FALSE'];
                     try { 
                         $db->query("SAVEPOINT insert_post");
                         if(count($db_post_obj->self_mentions_list) + count($db_post_obj->trail_mentions_list) > 0) {
@@ -390,7 +447,7 @@ try {
                             $stmt_mention_insert_post->exec($common_inserts);
                         } else {
                             $common_inserts["self_text_regular"] = $db_post_obj->self_text_regular;
-                            $common_inserts["trail_text_regular"] = $db_post_obj->self_text_regular;
+                            $common_inserts["trail_text_regular"] = $db_post_obj->trail_text_regular;
                             $stmt_nomention_insert_post->exec($common_inserts);
                         }
                     } catch(Exception $e) {
@@ -431,32 +488,7 @@ try {
                         $stmt_insert_posts_media->exec([$post->id, $med["db_id"]]);
                     }
 
-                    $__arc_stat = serialize($archiving_status);
-                    // Insert tags into tags table and create relations in posts_tags table
-                    foreach ($tags as $tag) {
-                        if(check_delete($tag, $archiving_status->indexed_this_time, $blog_uuid, $db)) {
-                            $archiving_status->disk_used = $disk_use;
-                            $archiving_status->content = "Deleting blog by request of post <a href='https://".$server_blog_info->blog->name.".tumblr.com/$post->id'>$post->id</a>, please wait...";
-                            queueEventToAll($searches_array, "FINISHEDINDEXING!", $archiving_status);                  
-                            delete_blog($tag, $archiving_status->indexed_this_time, $blog_uuid, $db);
-                            $archiving_status->content = "Blog deleted. Goodbye.";
-                            $archiving_status->deleted = true;                       
-                            queueEventToAll($searches_array, "FINISHEDINDEXING!", $archiving_status);
-                            $resolve_queries->execute(["blog_uuid" => $blog_uuid]);
-                            $abandonLease->execute(["leader_uuid" => $archiver_uuid]);
-                            $db->commit();
-                            exit;
-                        }
-                        $tagid = $stmt_insert_tag->exec(["tag_text" => $tag])->fetchColumn();
-                        $stmt_insert_posts_tags->exec([$blog_uuid, $post->id, $tagid]);
-                        $arc_stat = unserialize($__arc_stat);
-                        $arc_stat->newTag = (object)[]; 
-                        $arc_stat->newTag->tag_id = $tagid;
-                        $arc_stat->newTag->tagtext = $tag;
-                        $arc_stat->newTag->user_usecount = 1;
-                        $arc_stat->disk_used = $disk_use;
-                        queueEventToAll($searches_array, "INDEXEDTAG!", $arc_stat);
-                    }
+                    notify_tags($tags, $post_id);
                     
                     $db_blog_info->indexed_post_count += 1;
                     $stmt_update_blog->exec([
@@ -473,26 +505,8 @@ try {
                     $post_last_indexed_info = $post_last_attempted_info;
                     $archiving_status->indexed_post_count = $db_blog_info->indexed_post_count;
                     $archiving_status->indexed_this_time += 1;
-
-                    $post_searches_results = execAllSearches($db, $searches_array, "p.post_id = :post_id", ["post_id" => $post->id]);
-                    $listener_result_map = [];
-
-                    $archiving_status->disk_used = $disk_use;
+                    notify_search_results($post);
                     
-                    $__arc_stat = serialize($archiving_status);
-                    $arc_stat = unserialize($__arc_stat);
-
-                    foreach($post_searches_results as $post_result_cont) {
-                        $post_result = $post_result_cont->results;
-                        if($post_result != false) {
-                            $post_result->tags = json_decode($post_result->tags);
-                            $arc_stat->as_search_result = [$post_result];
-                        } else {$arc_stat->as_search_result = null;}
-                        $arc_stat->isUpgrade = $isUpgrade;
-                        queueEvent("INDEXEDPOST!$post_result_cont->search_id", $arc_stat);
-                    }
-                    
-                    fireEventQueue();
                 } catch (Exception $e) {
                     $db->rollBack(); 
                     if($e->getCode() == "23505") { //post has already been indexed
@@ -628,7 +642,6 @@ try {
 } catch (Exception $e) {
     $error_string = "Error: " . $e->getMessage();
     $archiving_status->error = $error_string;
-    $arc_stat->post_id = $post_id;
     $archiving_status->notice = "A critical error occurred while indexing your blog. Posts may be missing.";
     $set_blog_success_status->exec(['FALSE', $blog_uuid]);
     sendEventToAll($searches_array, "ERROR!", (object)$archiving_status);

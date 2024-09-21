@@ -27,24 +27,30 @@ $blog_uuid = $_GET["blog_uuid"];
 $id_list = file_get_contents('php://input');
 
 $db = new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
+$index_version = $_GET["version"];
+$result_limit = isset($_GET["limit"]) ? $_GET["limit"] : 200;
+$appendParams = [$blog_uuid, $index_version, $result_limit, $blog_uuid];
+$where_params = [];
 $args = [
     "blog_uuid" => $blog_uuid, 
     "index_version" => $_GET["version"], 
     "result_limit" => isset($_GET["limit"]) ? $_GET["limit"] : 200];
 $selection_stmt = "post_date < now()";
-if($id_list = null) { $id_list = [];}
+if($id_list == null) { $id_list = [];}
 else if($id_list != null) {
     $id_list = json_decode($id_list);
-    $placeholders = implode(',', array_fill(0, count($post_ids), '?'));
+    $placeholders = implode(',', array_fill(0, count($id_list), '?'));
     $selection_stmt = " post_id in ($placeholders)";
+    $where_params = $id_list;
 } else if(isset($_GET["after"])) {
-    $selection_stmt = " post_date > to_timestamp(:timestamp_anchor) ";
+    $selection_stmt = " post_date > to_timestamp(?) ";
     $args["timestamp_anchor"] = $_GET["after"];
+    $where_params = [$_GET["after"]];
 } else if(isset($_GET["before"])) { 
-    $selection_stmt = " post_date < to_timestamp(:timestamp_anchor) ";
+    $selection_stmt = " post_date < to_timestamp(?) ";
     $args["timestamp_anchor"] = $_GET["before"];
+    $where_params = [$_GET["before"]];
 }
-
 
 $stmt = $db->prepare(
     "SELECT c.post_id_i::TEXT as post_id, c.*, 
@@ -54,17 +60,28 @@ $stmt = $db->prepare(
             SELECT 
                 post_id as post_id_i, post_date, 
                 blocksb as blocks, tag_text, 
+                blog_uuid,
                 is_reblog, 
-                hit_rate, 
                 extract(epoch from post_date)::INT as timestamp,
+                post_date,
                 '$content_text_config' as text_config,
                 ts_meta,
-                ts_content as ts_content,
+                ts_content,
+                has_text,
+                has_link,
+                has_ask,
+                has_images,
+                has_video,
+                has_audio,
+                has_chat,
+                index_version,
+                hit_rate,
+                deleted
             FROM posts
-            WHERE blog_uuid = :blog_uuid
-            AND index_version = :index_version
-            AND $selection_stmt
-            LIMIT :result_limit) as c 
+            WHERE $selection_stmt
+            AND blog_uuid = ?
+            AND index_version = ?
+            LIMIT ?) as c 
             LEFT JOIN LATERAL
             (SELECT 
                 array_to_json(array_agg(t.tag_name)) as tags
@@ -73,7 +90,7 @@ $stmt = $db->prepare(
              LEFT JOIN 
                 tags t ON pt.tag_id = t.tag_id
              WHERE
-                pt.blog_uuid = :blog_uuid 
+                pt.blog_uuid = ? 
                 AND 
                 pt.post_id = c.post_id_i
              GROUP BY 
@@ -94,8 +111,8 @@ $stmt = $db->prepare(
             ) as mediaagg ON true
      ");
 
-$stmt->bindValues($args);
-$posts = $stmt->exec($id_list)->fetchAll(PDO::FETCH_OBJ);
+$queryArgs = [...$where_params, ...$appendParams]; 
+$posts = $stmt->exec($queryArgs)->fetchAll(PDO::FETCH_OBJ);
 
 if($posts == false) {
     $posts = [];
