@@ -62,7 +62,7 @@ function extract_siikr_subblocks_from_subpost(&$subpost, $db_media_map, &$soFar,
     $blockct = 0;
     $dibsArr = []; //stores string objects that should be inserted before a block of a given index.
     
-    /*foreach($subpost->layout as $lay_item) {
+    foreach($subpost->layout as $lay_item) {
         if($lay_item->type == "ask") {
             if(property_exists($lay_item, "attribution") && $lay_item->attribution?->blog?->name != null) {
                 $asking_blog_info = $lay_item?->attribution?->blog;
@@ -71,8 +71,7 @@ function extract_siikr_subblocks_from_subpost(&$subpost, $db_media_map, &$soFar,
                     $fakeBlock = (object)[];
                     $fakeBlock->type = "text"; 
                     $fakeBlock->text = $asking_blog_info->name;
-                    $block_idx = $lay_item->blocks[0];
-                    
+                    $block_idx = $lay_item->blocks[0];                    
                     $generatedMention = (object)[];
                     $generatedMention->start = 0;
                     $insertionLength = mb_strlen($asking_blog_info->name." ");
@@ -93,7 +92,7 @@ function extract_siikr_subblocks_from_subpost(&$subpost, $db_media_map, &$soFar,
                 }
             }
         }
-    }*/
+    }
    
     foreach ($content as &$sikkrblock) {
         list($block, $media_text) = subblock_to_tumblr($sikkrblock, $db_media_map, $soFar);
@@ -130,9 +129,9 @@ function extract_siikr_subblocks_from_subpost(&$subpost, $db_media_map, &$soFar,
             
             if(property_exists($block, "type")) {
                 if($block->type == 'poll') {
-                    $content_text = $block->question;
-                    foreach($block?->answers as $answer) {
-                        $content_text .= $answer->answer_text."\n";
+                    $content_text = $sikkrblock->pq;
+                    foreach($sikkrblock?->al as $answer) {
+                        $content_text .= $answer."\n";
                     }
                     $text_content["no_mentions"][] = $content_text;
                     $text_content["with_mentions"][] = $content_text; 
@@ -198,6 +197,9 @@ function extract_db_content_from_siikr_post(&$post, $db_media_map) {
             if(@$trail_item?->blog?->name != null) {
                 $soFar["trail_users"][$trail_item->blog->name] = true;
                 addHintCandidate($trail_item->blog->name, $deactivationHints);
+            } else if (@$trail_item?->by != null) {
+                $soFar["trail_users"][$trail_item->by] = true;
+                addHintCandidate($trail_item->by, $deactivationHints);
             } else {
                 echo "----------bork\n, username unavailable";
             }

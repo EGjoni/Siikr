@@ -32,10 +32,11 @@ function tsvec_to_array($vec_string) {
     $lexemes = [];
     foreach($lexeme_wpos_arr as &$lexeme_wpos) {
         $lexeme_wpos_l = explode(':', $lexeme_wpos);
+        $lexeme_wpos_l[0] = substr($lexeme_wpos_l[0], 1, strlen($lexeme_wpos_l[0])-2);
         $pos_ws_arr = explode(',', $lexeme_wpos_l[1]);
         $pos_ws = [];
         foreach($pos_ws_arr as $pos_wo) {
-            $pos_ws = ["pos" => (int)$pos_wo[0], "w" => $pos_wo[1]];
+            $pos_ws = ["pos" => (int)$pos_wo, "w" => substr($pos_wo, -1, 1)];
         }
         $lexemes[$lexeme_wpos_l[0]][] = $pos_ws;
     }
@@ -43,20 +44,72 @@ function tsvec_to_array($vec_string) {
 }
 
 $qaq = $db->prepare("SELECT ts_content, ts_meta from posts where post_id = :post_id");
+$reserved = ["api" => 1, "settings" => 1, "new" => 1];
+$failed_posts = []; 
+
+
 function quality_assurance($post) {
-    global $db, $qaq;
+    global $db, $qaq, $reserved, $failed_posts;
     $resolved = $qaq->exec(["post_id"=>$post->post_id])->fetch(PDO::FETCH_OBJ);
-    //$aso_c = tsvec_to_array($resolved->ts_content);
-    //$aso_m = tsvec_to_array($resolved->ts_meta);
-    if($resolved->ts_content != $post->ts_content) {
-        echo "\n------ts_content mismatch-----\n";
-        echo "new:  $resolved->ts_content\n";
-        echo "old:  $post->ts_content\n";
+    $asr_c = tsvec_to_array($resolved->ts_content);
+    $asr_m = tsvec_to_array($resolved->ts_meta);
+    $aso_c = tsvec_to_array($post->ts_content);
+    $aso_m = tsvec_to_array($post->ts_meta);
+    $err = false;
+    $fail_string = "";
+    if($resolved->ts_content != $post->ts_content) {        
+        if (strlen($resolved->ts_content) < strlen($post->ts_content)) {            
+            if(count($asr_c) != count($aso_c)) {
+                //echo "\n------ts_content mismatch-----\n";
+                //echo "new:  $resolved->ts_content\n------";
+                //echo "\nold:  $post->ts_content\n";
+                foreach($aso_c as $o_c_k => $p) {
+                    if(!isset($asr_c[$o_c_k])) {
+                        $fail_string .= "missing $o_c_k\n";
+                        if(!isset($reserved[$o_c_k])) {
+                            $err = true;
+                        }
+                    }
+                }
+                if($err) {
+                    $failed_posts[$post->post_id]["content"] = [
+                        "original_ts" => $aso_c,
+                        "new_ts" => $asr_c,
+                        "fail_string"=> $fail_string];
+                    error_log("$post->post_id mismatched");
+                    throw new Exception("ts_mismatch");
+                }
+            }
+        }
     }
+    $fail_string;
     if($resolved->ts_meta != $post->ts_meta) {
-        echo "\n------ts_meta mismatch-----\n";
-        echo "new:  $resolved->ts_meta\n";
-        echo "old:  $post->ts_meta\n";
+        
+        if (strlen($resolved->ts_meta) < strlen($post->ts_meta)) {            
+            if(count($asr_m) != count($aso_m)) {
+                //echo "\n------ts_meta mismatch-----\n";
+                //echo "new:  $resolved->ts_meta\n--------";
+                //echo "\nold:  $post->ts_meta\n";
+                foreach($aso_m as $o_m_k => $p) {
+                    
+                    if($asr_m[$o_m_k] == null) {
+                        $fail_string .= "missing $o_m_k\n";
+                        if(!isset($reserved[$o_c_k])) {
+                            $err = true;
+                        }
+                    }
+                }
+                if($err) {
+                    $failed_posts[$post->post_id]["meta"] = [
+                        "original_ts" => $aso_m,
+                        "new_ts" => $asr_m,
+                        "fail_string"=> $fail_string 
+                    ];
+                    error_log("$post->post_id mismatched");
+                    throw new Exception("ts_mismatch");
+                }
+            }
+        }
     }
 }
 

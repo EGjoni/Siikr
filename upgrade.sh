@@ -5,6 +5,19 @@ script_path="$(realpath "$0")"
 script_dir="$(dirname "$script_path")"
 source "$script_dir/siikr.conf"
 
+
+rsync -av --exclude '.vscode/' \
+            --exclude 'auth/' \
+            --exclude 'dev/' \
+            --exclude 'nohup.out' \
+            --exclude '*.save' \
+            --exclude '~*' \
+            --exclude '.*' "$script_dir/siikr/" "$document_root/siikr/"
+
+sudo chown -R "$SUDO_USER" "$document_root/siikr"
+sudo chgrp -R "$php_user" "$document_root/siikr"
+sudo chmod 755 -R $document_root/siikr
+
 ensure_prereq() {
     local tool_name=$1
     local install_cmd=$2
@@ -62,16 +75,3 @@ sudo -u postgres psql -d $siikr_db -c "GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN 
 sudo -u postgres psql -d $siikr_db -c "GRANT ALL PRIVILEGES ON ALL PROCEDURES IN SCHEMA public TO $pg_user;"
 sudo -u postgres psql -d $siikr_db -c "ALTER ROLE $pg_user SUPERUSER;"
 sudo systemctl restart postgresql
-
-
-rsync -av --exclude '.vscode/' \
-            --exclude 'auth/' \
-            --exclude 'dev/' \
-            --exclude 'nohup.out' \
-            --exclude '*.save' \
-            --exclude '~*' \
-            --exclude '.*' "$script_dir/siikr/" "$document_root/siikr/"
-
-sudo chown -R "$SUDO_USER" "$document_root/siikr"
-sudo chgrp -R "$php_user" "$document_root/siikr"
-sudo chmod 755 -R $document_root/siikr

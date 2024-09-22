@@ -168,7 +168,7 @@ try {
     
     $stmt_upsert_media = $db->prepare( //My kingdom! My kingdom for unique multi-column hash constraint support!
         "WITH record AS (
-        SELECT ROW(:media_url, :preview_url, LEFT(:title, 250), LEFT(:description, 1000))::media_info AS r), 
+        SELECT ROW(:media_url, :preview_url, :title, :description)::media_info AS r), 
         existing AS (SELECT media_id FROM $media_table WHERE media_meta = (SELECT r FROM record) LIMIT 1), 
         inserted AS (
             INSERT INTO $media_table (media_meta, mtype) 
