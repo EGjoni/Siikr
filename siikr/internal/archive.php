@@ -301,6 +301,15 @@ try {
      */
     function addToAugmentQueue($blog_uuid) {}
 
+    /**
+     * asynchronously notify the hub of new blog stuff to check.
+     */
+    function notifyHub() {
+        global $predir, $blog_uuid, $this_server_url;
+        $exec_string = "php ".$predir."spoke_siikr/async/notify_blogstat_update.php $blog_uuid $this_server_url";
+        exec("$exec_string  > /dev/null &");
+    }
+
     $loop_count = 0;
     $upgradeCount = 0; //counts number of posts that have been upgraded
 
@@ -522,6 +531,7 @@ try {
                 }
             }
         } while (!empty($server_blog_info->posts));
+        if($archiving_status->indexed_this_time % 400 == 0) notifyHub();
         
         if(empty($gap_queue)) {
             $max_date = time();           
@@ -637,7 +647,7 @@ try {
     $archiving_status->content= "All done! ".$archiving_status->indexed_post_count." posts archived, and ".$archiving_status->indexed_this_time." new posts indexed! (Try hitting the refresh button if you think I missed one of your results)";
     $archiving_status->disk_used= $disk_use;
     sendEventToAll($searches_array, "FINISHEDINDEXING!", (object)$archiving_status); #notify the client
-    
+    notifyHub();
 
 } catch (Exception $e) {
     $error_string = "Error: " . $e->getMessage();
@@ -648,6 +658,7 @@ try {
     sendEventToAll($searches_array, "ERROR!", (object)$archiving_status);
     $resolve_queries->execute(["blog_uuid" => $blog_uuid]);
     $abandonLease->execute(["leader_uuid" => $archiver_uuid]);
+    notifyHub();
     die($error_string . "\n");
 }
 //$db->prepare("ANALYZE")->execute([]);

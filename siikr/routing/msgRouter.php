@@ -1,6 +1,4 @@
 <?php
-//phpInfo();
-//$serverPullPort = "tcp://127.0.0.1:5551";
 $serverEventsPort = "tcp://127.0.0.1:5550";
 $clientSubscriptionPort = "tcp://127.0.0.1:5558";
 $nowherePort = "tcp://127.0.0.1:5559";

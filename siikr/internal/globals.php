@@ -436,7 +436,7 @@ function getPostSearchString($query_text, $match_condition="p.blog_uuid = :q_uui
     $query_text_hun = "websearch_to_tsquery('$content_text_config', '$query_text')";
     $query_text_meta = $query_text_hun;
     $query_text_literal = "websearch_to_tsquery('simple', '$query_text')";
-    $query_text_stem = "websearch_to_tsquery('english_stem_simple', '$query_text')";
+    //$query_text_stem = "websearch_to_tsquery('english_stem_simple', '$query_text')";
     //--// + ts_rank_cd($stem_weight_string, base_results.stems_only) as score
     return "WITH results AS
                 (SELECT * FROM 
@@ -460,7 +460,7 @@ function getPostSearchString($query_text, $match_condition="p.blog_uuid = :q_uui
                         
                          
                     FROM 
-                        (".getInnerSearchString($query_text_hun, $query_text_meta, $query_text_stem, $query_text_literal, $match_condition, $filter_string).") as base_results
+                        (".getInnerSearchString($query_text_hun, $query_text_meta, /*$query_text_stem,*/ $query_text_literal, $match_condition, $filter_string).") as base_results
                     ) as scored
                 )
             SELECT r.post_id_i::TEXT as post_id, r.*, COALESCE(agg.tags, array_to_json(ARRAY[]::integer[])) as tags,
@@ -497,12 +497,12 @@ function getPostSearchString($query_text, $match_condition="p.blog_uuid = :q_uui
 }
 
 /**query match for just posts. Useful if you want to posthoc and*/
-function getInnerSearchString($tsquery_hun, $tsquery_meta, $tsquery_stem, $tsquery_literal, $match_condition="p.blog_uuid = :q_uuid ", $filter_string="") {
+function getInnerSearchString($tsquery_hun, $tsquery_meta, /*$tsquery_stem,*/ $tsquery_literal, $match_condition="p.blog_uuid = :q_uuid ", $filter_string="") {
     
     $result = "WITH queries AS (
             SELECT $tsquery_hun as en_hun_q, 
             $tsquery_meta as meta_q, 
-            $tsquery_stem as stem_q,
+            --$tsquery_stem as stem_q,
             $tsquery_literal as literal_q
         )
         SELECT 

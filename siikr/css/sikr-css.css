@@ -1447,11 +1447,19 @@ button#show-advanced {
   width: 32px;
   height: 32px;
 }
-
+blockquote.text-container {
+	width: auto;
+	border-left-width: 3px;
+	border-left-style: solid;
+	padding-left: 8px;
+	margin-left: 8px;
+	border-left-color: #ccc;
+}
 .text-container {
   display: block;
   width: 100%;
-  margin-top: 16px;
+  margin-top: 8px;
+  white-space: pre-wrap;
 }
 h1.text-container {
   font-size: 1.5em;
@@ -1776,7 +1784,10 @@ dialog#advanced-filter * {
   text-align: center;
 }
 
-
 ul li, ol li {
   display: list-item !important;
+}
+
+.text-container a {
+  color: black;
 }
