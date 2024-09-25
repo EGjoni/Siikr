@@ -1,5 +1,5 @@
 <?php
-$scriptVer = 71;
+$scriptVer = 75;
 require_once 'internal/disks.php';
 try {
 	$diskpath = $db_disk;
@@ -18,7 +18,7 @@ try {
         <title>Siikr - A tumblr search engine that really exists!</title>
     <link rel="stylesheet" type="text/css" href="css/sikr-css.css?<?php echo $scriptVer; ?>">
 </head>
-<body>
+<body <?php if(isset($node_maintenance_mode_reminder) && $node_maintenance_mode_reminder) { echo "class = 'maintenance-mode'";}?>>
 <?php //if($squid_game == true) {require_once 'deletion_roulette.php';}?>
 <div id="all-stuff">
     <?php require 'management/notice.php'?>

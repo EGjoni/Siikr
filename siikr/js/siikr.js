@@ -256,7 +256,11 @@ async function processMoreResults(obj) {
 
 async function resetProgressListeners(obj) {
 	search_id = obj.search_id; 
-	blogInfo = {search_id : search_id};
+	blogInfo = {
+		search_id : search_id,
+		blog_uuid: obj.blog_uuid,
+		blog_name: obj.blog_name
+	};
 
 	progressListener.removeListener("indexbegin");
 	progressListener.removeListener("indexconclude");
@@ -289,6 +293,10 @@ async function resetProgressListeners(obj) {
 		updateNoticeText);
 	noticeListener.setListener("errorlistener", 
 		"ERROR!"+search_id, {}, updateErrorText);
+	
+	if(obj.display_error != null) {
+		fadeStatusTextTo(obj.display_error);
+	}
 }
 
 /**maintains a leader stream fetcher object. leader gets replaced by any new calls to the s_fetch(), and an old streaming fetchers halt their progress if the aren't the leader. 
@@ -463,6 +471,7 @@ async function __reSort(sortMode, updateURL=true, doSeek = true, isInsuranceChec
 	addedElems = [...addedElems]; 
 	removedElems = [...removedElems];
 	var selectedTags = getCurrentlySelectedTags();
+	let scrollPos = document.scrollingElement.scrollTop;
 	await flip([...elems], 
 		()=>{
 			for(var i=0; i<removedElems.length; i++) {
@@ -483,6 +492,7 @@ async function __reSort(sortMode, updateURL=true, doSeek = true, isInsuranceChec
 			callback: null                    // a function to call when the animation is finished
 		}		
 	);
+	document.scrollingElement.scrollTop = scrollPos;
 }
 
 /**
@@ -713,6 +723,7 @@ async function attachPending(attachCount) {
 		else 
 			throw new Error();
 	});}catch(e) {}
+	let scrollPos = document.scrollingElement.scrollTop;
 	await flip([...alreadyAttached, ...toAttach], 
 		()=>{
 			for(var i=0; i<toAttach.length; i++) { 
@@ -730,6 +741,7 @@ async function attachPending(attachCount) {
 		}		
 	);
 	pending_attachment_count -= toAttach.length;
+	document.scrollingElement.scrollTop = scrollPos;
 	updatePendingCountHint();
 }
 
@@ -739,6 +751,7 @@ async function replaceAndResort(toReSort, toReplace) {
 	for(var i=0; i < toReSort.length; i++) {
 		onElems.push(toReSort[i].element);
 	}
+	let scrollPos = document.scrollingElement.scrollTop;
 	await flip(
 		onElems,
 		()=>{
@@ -767,6 +780,7 @@ async function replaceAndResort(toReSort, toReplace) {
 			callback: null                    // a function to call when the animation is finished
 		}
 	);
+	document.scrollingElement.scrollTop = scrollPos;
 }
 
 /**
@@ -1221,19 +1235,31 @@ let finished = [];
 async function hydratePostTags(postElem, tagAwaiter) {
 	var data = postElem.result;
 	pending.push(tagAwaiter);
-	let gotTags = await tagAwaiter;
-	var tagList = postElem.querySelector(".result-tags");
-	//if(Object.keys(data.tags).length == 0) console.log("skipping " + postElem.result.post_id + " due to 0 tags");
-	//else console.log("augmenting " + postElem.result.post_id+" : with " + Object.keys(data.tags).length + " tags ");
-	for(var k of Object.keys(data.tags)) {
-		if(data.tags[k] == undefined && blogTags[k] != undefined) {
-			data.tags[k] = blogTags[k];
-			var taglink = document.createElement("a");
-			taglink.classList.add("taglink");
-			taglink.innerText = "#"+(typeof data.tags[k] == "string"? data.tags[k] : data.tags[k].full);
-			tagList.appendChild(taglink); 
+	let hydrateTagLoop = () => {
+		var tagList = postElem.querySelector(".result-tags");
+		if(data.tagElemMap == null) data.tagElemMap = {};
+		for(var k of Object.keys(data.tags)) {
+			if(blogTags[k] != undefined) {
+				if(data.tags[k] == undefined) {
+					data.tags[k] = blogTags[k];
+				}
+				var taglink = data.tagElemMap[k];
+				if(data.tagElemMap[k] == undefined) {
+					data.tagElemMap[k] = document.createElement("a");
+					taglink = data.tagElemMap[k];
+				}
+				taglink.classList.add("taglink");
+				taglink.innerText = "#"+(typeof data.tags[k] == "string"? data.tags[k] : data.tags[k].full);
+				tagList.appendChild(taglink); 
+			}
 		}
 	}
+	hydrateTagLoop();
+	let gotTags = await tagAwaiter;
+	hydrateTagLoop();
+	//if(Object.keys(data.tags).length == 0) console.log("skipping " + postElem.result.post_id + " due to 0 tags");
+	//else console.log("augmenting " + postElem.result.post_id+" : with " + Object.keys(data.tags).length + " tags ");
+	
 	finished.push(pending.pop()); 
 }
 
@@ -1302,36 +1328,8 @@ function splitURL(outerState) {
 		}
 	});
 
-	//if(window.parent == window) {
-	//	window.history.replaceState({}, "Siik "+usernameField.value+"'s blog for `"+queryField.value+"`", "?"+href.split("?")[1]);
-	//	document.title = "Siik "+usernameField.value+"'s blog for `"+queryField.value+"`";
-	//}
 	setFormFromJSON(fromRequestJSON(searchParams));
-    //var urlSplit = urlQuery.split(/(&?u=|&?s=|&?p=|&?q=|&?tags=)/);
-    /*for(var i=0; i<urlSplit.length; i++){ 
-        if(urlSplit[i].search(/(&u|^u)=/) != -1) {
-            usernameField.value = urlSplit[i+1];
-        } else if(urlSplit[i].search(/(&q|^q)=/) != -1) {
-            queryField.value = urlSplit[i+1];
-        } 
-        else if(urlSplit[i].search(/(&p|^p)=/) != -1) {
-            var previewState = urlSplit[i+1];
-            if(previewState === "t") { 
-                previewToggleState = true;                
-            }
-        }
-		else if(urlSplit[i].search(/(&s|^s)=/) != -1) { 
-			prevSortBy = sortMode;
-			sortBy.value = urlSplit[i+1];
-		} 
-		else if(urlSplit[i].search(/(&s|^s)=/) != -1) { 
-			prevSortBy = sortMode;
-			sortBy.value = urlSplit[i+1];
-		}
-		else if(urlSplit[i].indexOf("tags=") !=-1) {
-			preSpecifiedTags = JSON.parse(urlSplit[i+1]);
-		}
-    }*/
+    
    	let state = window.stateHistory[outerState?.search_id];
    	if(state == null) state = outerState?.state;
 	if(state?.search_id && state?.blog_uuid && state?.display && Object.keys(state?.display).length > 0) {
@@ -1412,7 +1410,8 @@ function updateHistoryState(urlPath = null, updates_search_id = null) {
 
 	let attached = {};
 	let pendingAttach = {};
-	let title = usernameField.value?.length > 0 ? "Siikr "+usernameField.value+"'s blog for '"+queryField.value+"'" : document.title;
+	let name = blogInfo?.name ?? usernameField.value;
+	let title = name.length > 0 ? "Siikr "+name+"'s blog for '"+queryField.value+"'" : document.title;
 	document.title = title;
 	currentResults.forEach(r => {
 		if(r.element.parentNode != null) {

@@ -10,6 +10,7 @@ $checkinQueue = [];
 $forward_params = $_GET;
 
 function initSearch($username, $forward_params) {
+    global $blog_info;
     $forward_search_params = $forward_params;
     $forward_archive_params = (array)((object)$forward_search_params);
     try {        
@@ -29,20 +30,22 @@ function initSearch($username, $forward_params) {
         $new_archive = false;
         if($searchNode == null && $archivingNode == null) {
             $searchNode = askAllNodes($blog_info->blog_uuid, $blog_info);
-            $archivingNode = $archivingNode;
+            $archivingNode = $searchNode;
             $ping_suggested = false;
             $new_archive = true;
         }
-        if($searchNode != false) {
+        if($searchNode != false) {           
             if($new_archive == true) {
                 registerToBlogNodeMap($blog_info->blog_uuid, $archivingNode);
             }
+            $blog_info->node_id = $archivingNode->node_id;
+            $blog_info->indexed_post_count = $archivingNode->indexed_post_count;
             cacheBestNode($blog_info->blog_uuid, $archivingNode);
             if($searchNode->node_id != $archivingNode->node_id) {
                 $forward_search_params["search_only"] = true;
                 $forward_search_params["listen_to"] = $archivingNode->node_url;
-                $forward_archive_params["archive_only"] = true;
-                forwardRequest($forward_archive_params, 'streamed_search.php', $archivingNode, $blog_info);
+                $forward___archive___params["archive_only"] = true;
+                forwardRequest($forward___archive___params, 'streamed_search.php', $archivingNode, $blog_info);
             }
             forwardRequest($forward_search_params, 'streamed_search.php', $searchNode, $blog_info);            
             if($ping_suggested) {//update blognode map

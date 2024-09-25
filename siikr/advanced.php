@@ -427,11 +427,11 @@
                 } else {
                     pendingCall = newCall;
                     window.setTimeout(() => {
-                        console.log("g");
+                        //console.log("g");
                         if(pendingCall != null) {
                             pendingCall();
                             pendingCall = null;
-                        } else {"slow down!"}
+                        }
                     }, rateLimit);
                 }
             }

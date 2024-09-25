@@ -1,8 +1,6 @@
 <?php
 /**various function to broadcast the state of this node to its hub*/
-$self_file = explode("/", $_SERVER["PHP_SELF"]); array_pop($self_file);
-$self_dir = implode("/", $self_file);
-require_once "$self_dir/../../internal/globals.php";
+require_once __DIR__."/../internal/globals.php";
 
 
 /**requests that the hub call this node back to check in about the provided blog_uuid*/

@@ -15,7 +15,7 @@ function localize_media_ids($blog_uuid, &$foreign_siikrpost) {
     foreach ($media_list as &$med) {
         $media_item = (object)$med;
         $media_meta = (object)$media_item->media_meta;
-        $media_meta->type = $media_item->type;
+        $media_meta->type = $media_item->mtype;
         $db_media_id = get_media_id($media_meta);//kinda hacky but expected to be in the context because this script only gets imported from archive.php from now. 
         $id_map[$media_item->media_id] = $media_item;
         $id_map[$media_item->media_id]->media_id = $db_media_id;
@@ -115,7 +115,7 @@ function quality_assurance($post) {
 
 function ingest_posts($blog_uuid, $post_list) {
     global $db, $db_blog_info, $archiving_status, $server_blog_info;
-    global $archiver_version;
+    global $archiver_version, $archiver_uuid, $abandonLease;
     global $most_recent_post_id;
     global $stmt_nomention_insert_post;
     global $stmt_mention_insert_post, $stmt_update_blog;
@@ -125,18 +125,24 @@ function ingest_posts($blog_uuid, $post_list) {
     global $delete_existing_mp_links;
     global $rows_updated;
     global $stmt_insert_posts_media;
+    global $post_id_last_attempted, $post_last_attempted_info, $search_notify_rate, $point_last_searched; 
 
 
     $repair_mode = true;
     foreach($post_list as &$post) {
         try {
+            if(!amLeader($db, $blog_uuid, $archiver_uuid)) {
+                $abandonLease->execute(["leader_uuid" => $archiver_uuid]);
+                exit;
+            }
             $stmt_update_blogstat_count->exec([
                 "post_id_last_attempted" => $post->post_id, 
                 "indexed_count" => $db_blog_info->indexed_post_count,
-                "serverside_posts_reported" => $server_blog_info->total_posts,
+                "serverside_posts_reported" => $db_blog_info->serverside_posts_reported,
                 "is_indexing" => 'TRUE', 
                 "success" => 'FALSE',
-                "blog_uuid" => $blog_uuid]);
+                "blog_uuid" => $blog_uuid
+            ]);
             $db->beginTransaction();
                 $post->blocks = json_decode($post->blocks);
                 $post->tags = json_decode($post->tags, true);
@@ -200,7 +206,7 @@ function ingest_posts($blog_uuid, $post_list) {
                             $archiving_status->indexed_this_time -=1;
                             $db_blog_info->indexed_post_count -= 1;
                             $archiving_status->upgraded += 1;
-                            $delete_existing_mp_links->exec(["post_id"=>$post->post_id]); //whipe old media_links for upgrade
+                        $delete_existing_mp_links->exec(["post_id"=>$post->post_id]); //whipe old media_links for upgrade
                             $isUpgrade = true;
                             $rows_updated++;
                             addToReanalysisQueue($blog_uuid);
@@ -234,7 +240,16 @@ function ingest_posts($blog_uuid, $post_list) {
             $post_last_indexed_info = $post_last_attempted_info;
             $archiving_status->indexed_post_count = $db_blog_info->indexed_post_count;
             $archiving_status->indexed_this_time += 1;
-            notify_search_results($post);
+            notify_search_results("p.blog_uuid = :blog_uuid and p.post_date < :last_range_date", 
+                    ["blog_uuid" => $blog_uuid, "last_range_date" => $point_last_searched],
+                    $archiving_status->indexed_this_time > 0 && $archiving_status->indexed_this_time % $search_notify_rate != 0);
+               
+                $point_last_searched = $post->post_date;
+            
+            if($archiving_status->indexed_this_time % $search_notify_rate == 0) {
+                $point_last_searched = $post->post_date;
+            }
+            if($archiving_status->indexed_this_time % 400 == 0) notifyHub();
         }  catch(Exception $e) { 
             throw $e;
         }
@@ -279,7 +294,7 @@ function gather_foreign_posts($blog_uuid, $archiver_version, $this_server_url, $
     } while(count($results) >=200);
     
 
-    $posts = $result;
+    return array_pop($results);
 } catch(Exception $e){}
 }
 

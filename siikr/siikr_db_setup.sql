@@ -854,7 +854,9 @@ CREATE TABLE public.blog_node_map (
     indexed_posts integer,
     is_indexing boolean,
     success boolean,
-    last_index_count_modification_time timestamp without time zone
+    last_index_count_modification_time timestamp without time zone,
+    smallest_indexed_post_id bigint,
+    largest_indexed_post_id bigint
 );
 
 
@@ -875,7 +877,9 @@ CREATE TABLE public.blogstats (
     index_request_count integer DEFAULT 0,
     serverside_posts_reported integer DEFAULT 0,
     last_stats_update timestamp without time zone,
-    post_count_at_stat integer
+    post_count_at_stat integer,
+    smallest_indexed_post_id bigint,
+    largest_indexed_post_id bigint
 );
 
 
@@ -1237,7 +1241,8 @@ CREATE TABLE public.siikr_nodes (
     reliability double precision DEFAULT 10,
     estimated_calls_remaining integer DEFAULT 5000,
     last_pinged_nodetime timestamp without time zone DEFAULT now(),
-    node_language character(2) DEFAULT 'en'::bpchar
+    node_language character(2) DEFAULT 'en'::bpchar,
+    down_for_maintenance boolean DEFAULT false
 );
 
 
@@ -1841,13 +1846,6 @@ CREATE INDEX idx_blog_uuid_post_date ON public.posts USING btree (blog_uuid, pos
 
 
 --
--- Name: idx_e_vec; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_e_vec ON public.posts USING gin (ts_meta);
-
-
---
 -- Name: idx_hash_media_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -1891,13 +1889,6 @@ SET default_tablespace = '';
 --
 
 CREATE INDEX idx_posts_tags_blog_uuid ON public.posts_tags USING hash (blog_uuid);
-
-
---
--- Name: idxsh_vec; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idxsh_vec ON public.posts USING gin (ts_content);
 
 
 --
@@ -1951,6 +1942,13 @@ SET default_tablespace = '';
 --
 
 CREATE INDEX media_temp_media_meta_idx ON public.media USING hash (media_meta);
+
+
+--
+-- Name: meta_content_tsidx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX meta_content_tsidx ON public.posts USING gin (((ts_meta || ts_content)));
 
 
 --

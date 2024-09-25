@@ -36,9 +36,10 @@ $args = [
     "index_version" => $_GET["version"], 
     "result_limit" => isset($_GET["limit"]) ? $_GET["limit"] : 200];
 $selection_stmt = "post_date < now()";
-if($id_list == null) { $id_list = [];}
-else if($id_list != null) {
-    $id_list = json_decode($id_list);
+if($id_list == null || $id_list == "") { $id_list = [];}
+else $id_list = json_decode($id_list);
+if(count($id_list) > 0 ) {
+    //$id_list = json_decode($id_list);
     $placeholders = implode(',', array_fill(0, count($id_list), '?'));
     $selection_stmt = " post_id in ($placeholders)";
     $where_params = $id_list;
