@@ -1,13 +1,15 @@
 <?php
-$all_nodes_prep = $db->prepare("SELECT * FROM siikr_nodes");
+$all_nodes_prep = $db->prepare("SELECT * FROM siikr_nodes WHERE down_for_maintenance = false");
 $all_nodes = $all_nodes_prep->exec([])->fetchAll(PDO::FETCH_OBJ); 
 $insert_into_nodemap = $db->prepare(
     "INSERT INTO blog_node_map 
             (blog_uuid, node_id, is_indexing, success,
             indexed_posts, last_index_count_modification_time, 
+            smallest_indexed_post_id, largest_indexed_post_id
             )
         VALUES (:blog_uuid, :node_id, :is_indexing, :success,
-            :indexed_posts, :last_index_count_modification_time)"); 
+            :indexed_posts, :last_index_count_modification_time,
+            :smallest_indexed_post_id, :largest_indexed_post_id)"); 
 
 $update_blog_nodemap_stats = $db->prepare(
     "UPDATE blog_node_map  
@@ -20,20 +22,24 @@ $update_blog_nodemap_stats = $db->prepare(
             indexed_posts = :indexed_posts, 
             success = :success,
             is_indexing = :is_indexing,
+            largest_indexed_post_id = :largest_indexed_post_id,
+            smallest_indexed_post_id = :smallest_indexed_post_id
         WHERE blog_uuid = :blog_uuid,
             node_id = :node_uuid"
 );
 
 $upsert_blog_nodemap_stats = $db->prepare(
     "INSERT INTO blog_node_map 
-        (blog_uuid, node_id, is_indexing, success, indexed_posts, last_index_count_modification_time)
+        (blog_uuid, node_id, is_indexing, success, indexed_posts, largest_indexed_post_id, smallest_indexed_post_id, last_index_count_modification_time)
     VALUES 
-        (:blog_uuid, :node_id, :is_indexing, :success, :indexed_posts, now())
+        (:blog_uuid, :node_id, :is_indexing, :success, :indexed_posts, :largest_indexed_post_id, :smallest_indexed_post_id, now())
     ON CONFLICT (blog_uuid, node_id)  -- only change if the index_count changes
     DO UPDATE SET 
         is_indexing = EXCLUDED.is_indexing,
         success = EXCLUDED.success,
         indexed_posts = EXCLUDED.indexed_posts,
+        largest_indexed_post_id = EXCLUDED.largest_indexed_post_id,
+        smallest_indexed_post_id = EXCLUDED.smallest_indexed_post_id
         last_index_count_modification_time = CASE
             WHEN blog_node_map.indexed_posts = EXCLUDED.indexed_posts THEN blog_node_map.last_index_count_modification_time
             ELSE now()
@@ -47,10 +53,12 @@ $update_nodeStats = $db->prepare(
         free_space_mb = :free_space_mb,
         estimated_calls_remaining = :estimated_calls_remaining,
         reliability = LEAST(reliability, :reliability),
-        node_language = :lang
+        node_language = :lang,
+        down_for_maintenance = :down_for_maintenance
     WHERE node_id = :node_id"
 );
 
+$remove_nodecache = $db->prepare( "DELETE FROM cached_blog_node_map WHERE node_id = :node_id");
 
 /**
  * updates the blogs_node_map table to include an entry from the given blog to the given node
@@ -63,22 +71,28 @@ function registerToBlogNodeMap($blog_uuid, $node) {
     $upsert_blog_nodemap_stats->exec([
         "blog_uuid" => $blog_uuid,
         "node_id" =>  $node->node_id,
-        "success" => $node->success, 
-        "is_indexing" => $node->is_indexing,
+        "success" => $node?->success ?? false ? "TRUE" : "FALSE" , 
+        "is_indexing" => $node?->is_indexing ?? false ? "TRUE" : "FALSE" ,
+        "largest_indexed_post_id" => $node->largest_indexed_post_id,
+        "smallest_indexed_post_id" => $node->smallest_indexed_post_id,
         "indexed_posts" => $node->indexed_post_count
     ]);
 }
 
 function updateNodeStats($node) {
-    global $update_nodeStats;
+    global $update_nodeStats, $remove_nodecache;
     $update_nodeStats->exec([
         "node_id" => $node->node_id, 
         "free_space_mb" => $node->free_space_mb,
         "reliability" => $node->reliability,
         "estimated_calls_remaining" => (int)$node->estimated_calls_remaining,
         "node_ping_time" => $node->time_right_now,
-        "lang" => $node->spoke_language ?? 'en'
+        "lang" => $node->spoke_language ?? 'en',
+        "down_for_maintenance" => isset($node->down_for_maintenance) && $node->down_for_maintenance ? 'TRUE' : 'FALSE'
     ]);
+    if($node->down_for_maintenance) {
+        $remove_nodecache->exec(["node_id" => $node_id]);
+    }
 }
 
 
@@ -155,7 +169,7 @@ function askAllNodes($blog_uuid, $blog_info=null) {
             $json_result = json_decode($result["response"], true);
             if($result["status"] == "Error") {
                 $node->reliability_boost -=0.125;
-            } else {
+            } else if(!$json_result["down_for_maintenance"]) {
                 $node->reliability_boost +=0.06125;
                 $available_nodes[] = $node;
             }
@@ -207,10 +221,14 @@ $cachedNode_upsert = $db->prepare(
 
 function cacheBestNode($blog_uuid, $node) {
     global $cachedNode_upsert;
-    $cachedNode_upsert->exec([
-        "blog_uuid" => $blog_uuid, 
-        "node_id" => $node->node_id
-    ]);    
+    if($node?->down_for_maintenance) {
+
+    } else {
+        $cachedNode_upsert->exec([
+            "blog_uuid" => $blog_uuid, 
+            "node_id" => $node->node_id
+        ]);    
+    }
 }
 
 $cached_prep = $db->prepare(
@@ -218,6 +236,7 @@ $cached_prep = $db->prepare(
         sn.node_id,
         sn.node_url,
         sn.free_space_mb,
+        sn.down_for_maintenance,
         EXTRACT(epoch FROM sn.last_pinged_ourtime)::INT as last_pinged_ourtime,
         EXTRACT(epoch FROM sn.last_pinged_nodetime)::INT as last_pinged_nodetime,
         EXTRACT(epoch FROM bnm.last_index_count_modification_time)::INT as last_index_count_modification_time,
@@ -230,7 +249,8 @@ $cached_prep = $db->prepare(
     WHERE cbnm.blog_uuid = :blog_uuid 
         AND sn.node_id = cbnm.node_id 
         AND bnm.node_id = cbnm.node_id 
-        AND bnm.blog_uuid = cbnm.blog_uuid");
+        AND bnm.blog_uuid = cbnm.blog_uuid
+        AND sn.down_for_maintenance = false");
 $known_prep = $db->prepare(
     "SELECT
         bnm.success,
@@ -245,7 +265,9 @@ $known_prep = $db->prepare(
         sn.reliability,
         sn.node_id
     FROM blog_node_map bnm, siikr_nodes sn 
-    WHERE bnm.blog_uuid = :blog_uuid AND bnm.node_id = sn.node_id");
+    WHERE bnm.blog_uuid = :blog_uuid 
+    AND bnm.node_id = sn.node_id
+    AND sn.down_for_maintenance = false");
 
 /**Checks to see if we know of a node that already has a bunch of posts archived from this blog. This is intended for a quick initial search. Afterward, a call should be made to 'findBestArchiverNode' to determine if the blog will need to be transferred over to a seperate node for archiving.
 * Attempts to return the best node for the job if we do returns null if no nodes no of the blog or none are viable
@@ -332,7 +354,7 @@ function tieBreaker($hostList, $blog_uuid, $blogInfo=null) {
                 continue;
             }
         }
-        if($host->estimated_calls_remaining == 0) { //this host can't interact with tumblr for a while
+        if($host->estimated_calls_remaining <= 0) { //this host can't interact with tumblr for a while
             continue;
         }
         $score = 1.0+((float)$host->reliabiltiy/10.0);

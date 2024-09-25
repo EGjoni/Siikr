@@ -610,7 +610,8 @@ function setPrunedFormatting (&$block) {//, &$db_media) {
                 $p->uuid = $f->blog->uuid;
                 $p->url = normalizeUrl($f->blog->url);
                 $p->name = $f->blog->name;
-                $p->uuid = $f->blog->uuid;
+                if(property_exists($f->blog, "uuid"))
+                    $p->uuid = $f->blog->uuid;
             }
             else if($f->type == 'link') {
                 $modded_link = resolve_blog_or_link($block, $f, $p);
@@ -712,7 +713,9 @@ function is_effective_mention($block, $f_rule) {
         $result->e = $f_rule->end;
         $result->url = normalizeUrl($f_rule->blog->url);
         $result->name =$f_rule->blog->name;
-        $result->uuid =$f_rule->blog->uuid;
+        $result->uuid = null;
+        if(property_exists($f_rule, "blog") && property_exists($f_rule->blog, "uuid"))
+            $result->uuid =$f_rule?->blog?->uuid;
         return $result;
     }
     else return false;

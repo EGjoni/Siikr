@@ -85,7 +85,7 @@ function beginSearch($db) {
                 but this makes me paranoid about infinite loops if I put the wrong FINISHEDINDEXING event, and anyway it's more efficient just to skip so...*/
                 $predir = __DIR__;
                 $exec_string = "php ".__DIR__."/internal/archive.php ". $blog_info->search_id. " ". $search_id_info->server;
-                $no_index = $search_only || $index_disabled;
+                $no_index = $search_only || $index_disabled || $node_in_maintenance_mode;
                 if(!$no_index) exec("$exec_string  > /dev/null &");
                 else if($index_disabled) {
                     throw new Exception("Sorry, indexing of new posts is temporarily disabled for maintenance");

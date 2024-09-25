@@ -169,7 +169,7 @@ function log_api_call($status_code, $est_reavailable) {
             }
         });
     }
-    if($est_reavailable == null) $est_reavailable = "NULL";
+    if($est_reavailable == null || $est_reavailable == -1) $est_reavailable = "NULL";
     $query = "INSERT INTO public.self_api_hist (req_time, response_code, est_reavailable) VALUES (NOW(), $status_code, $est_reavailable);
     REFRESH MATERIALIZED VIEW public.self_api_summary;";
     while(pg_connection_busy($dbconn)) {
@@ -197,10 +197,12 @@ function call_tumblr($blog_name_or_uuid, $request_type, $params=[], $with_meta =
         $response->meta = parseHeadersToObj($http_response_header);
     }
     $status_code = $response->meta->status;
+    $est_reavailable = -1;
     if($status_code == 429) {
         $http_response_header = $http_response_header ?? [];
         $est_reavailable = determine_reavailability($http_response_header);
     }
+    
     log_api_call($status_code, $est_reavailable);
     if($asString) {
         return $response_j;
@@ -216,7 +218,7 @@ function call_tumblr($blog_name_or_uuid, $request_type, $params=[], $with_meta =
 function fireForgetRequest($params, $endpoint, $payload) {    
     if(is_string($params)) $urlparamsstr = $params;
     else $urlparamsstr = http_build_query($params);
-    $fullUrl = $node->node_url . "/$endpoint?" . $urlparamsstr;    
+    $fullUrl = "$endpoint?" . $urlparamsstr;    
     $ch = curl_init($fullUrl);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, false);
     curl_setopt($ch, CURLOPT_TIMEOUT_MS, 200);
@@ -521,13 +523,13 @@ function getInnerSearchString($tsquery_hun, $tsquery_meta, /*$tsquery_stem,*/ $t
             $match_condition
             AND
             (
-            p.ts_content @@ q.literal_q
-            OR 
-            p.ts_meta @@ q.literal_q
-            OR
-            p.ts_meta @@ q.meta_q
-            OR
-            p.ts_content @@ q.en_hun_q
+                (p.ts_meta || p.ts_content) @@ q.literal_q
+                --OR 
+                --p.ts_meta @@ q.literal_q
+                OR
+                --(p.ts_meta || p.ts_content) @@ q.meta_q
+                --OR
+                (p.ts_meta || p.ts_content) @@ q.en_hun_q
             )
             $filter_string";
              //-- //OR p.stems_only @@ $query_text_stem
@@ -603,52 +605,6 @@ class Parser {
     }
 }
 
-/**
- * we want to check if the user is searching a deleted blog, and distinguish 
- * it as special from searching for an existing blog by its old name
- * 
- * we need to call tumblr with the blogname they are searching. 
- * - if tumblr has it, we just return tumblrs response as if this were a call to call_tumblr,
- * - if they don't we check out database to see if we have a blog_uuid.
- *      - if we don't we return tumblrs response again for error handling
- *      - if we do, we call tumblr again with that blog_uuid to find the new name
- *          - if tumblr has it, we just return the full response of what tumblr has
- *          - if they don't we've hit our HIT OUR SPECIAL CASE!!
- *              - return the blog_uuid, and name to trigger a search, but DO NOT archive
- *  
- * but given the complexity of the checks involved, we probably might as well handle db consistency resolution here.
- * which would make the logic:
- * 
- * - if tumblr has it check if the uuid matches what's in our database. 
- *      NOTE WE ALWAYS RETURN TUMBLRS FIRST RESPONSE IN THIS CASE 
- *      - << if it does match db_uuid, we just return tumblrs response as if this were a call to call_tumblr(),
- *      - << if it doesn't match db_uuid, we ultimately still return tumblrs response but before that
- *          - call tumblr again with our db_uuid to update the name in our database
- *              - set the name in our database to whatever tumblr reports, unless tumblr reports nothing
- *                  - in which case don't touch it. it's a deleted blog. 
- *          
- * - if they don't we check out database to see if we have a blog_uuid.
- *      - if we don't we return tumblrs response again for error handling
- *      - if we do, we call tumblr again with that blog_uuid to find the new name
- *          - if tumblr has it, we just return the full response of what tumblr has
- *          - if they don't we've hit our HIT OUR SPECIAL CASE!!
- *              - << return the blog_uuid, and name to trigger a search, but DO NOT archive
- * */
-function nameCorrespondenceObj($db, $userProvidedName) {
-    $existence_obj = (object)[];
-    $tumblr_blogname_info = call_tumblr($existingBlogUuidForName, "info", [], true);
-    $existence_obj->full_tumblr_response = $tumblr_blogname_info;
-    if($new_blogname_info->meta->status == 200) {
-        $existence_obj->tumblr_blogInfo_byUserProvidedName = $new_blogname_info->response->blog;
-    }
-    $db_blogInfo = $db->prepare("SELECT * FROM blogstats WHERE blog_name = :blog_name")->exec(["blog_name" => $userProvidedName])->fetch(PDO::FETCH_OBJ);
-    if($db_blogInfo->blog_name) {
-        $existence_obj->db_blogInfo_byUserProvidedName = $db_blogInfo;
-    }
-    return $existence_obj;
-
-}
-
 
 /**
  * @return obj a blogInfo object containing the resolved blog_uuid and name. This should be checked against the one tumblr purported before calling this function
@@ -713,12 +669,12 @@ function resolve_uuid($db, $blogNameFromUser, $blogInfoFromTumblr, $blogNameFrom
                 $error_string = implode("\n", $new_blogname_info->response->errors);
                 throw new Exception("Failed to determine new blog_name for a blog name tumblr reports no longer exists. Tumblr says: \"$error_string\"");
             }
-            $new_blogInfo = $new_blogname_info->$response->$blog;
+            $new_blogInfo = $new_blogname_info->response->blog;
             $new_name = $new_blogInfo->name;
             $change_name = $db->prepare("UPDATE blogstats 
                 SET blog_name = :new_name,
                     serverside_posts_reported = :tumblr_posts_reported 
-                WHERE blog_uuid = :blog_uuid")->exec(["new_name"=>$new_name, "blog_uuid"=>$blog_uuid]);
+                WHERE blog_uuid = :blog_uuid")->exec(["new_name"=>$new_name, "blog_uuid"=>$existingBlogUuidForName]);
             $return_result->uuid = $existingBlogUuidForName;
             $return_result->name = $new_name; 
         } else {
@@ -774,7 +730,7 @@ function ensureSpace($db, $db_blogInfo) {
 	global $db_min_disk_headroom;
     $blog_uuid = $db_blogInfo->blog_uuid;
 	$indexed_post_count = min($db_blogInfo->serverside_posts_reported, $db_blogInfo->indexed_post_count);
-	$posts_anticipated = $server_blog_info->serverside_posts_reported - $indexed_post_count;
+	$posts_anticipated = $db_blogInfo?->serverside_posts_reported - $indexed_post_count;
 	$averagePostSize = 3300;
 	$anticipatedSpaceRequired = $averagePostSize * $posts_anticipated;
     $other_anticipated_posts = $db->prepare("SELECT COALESCE(SUM(b.serverside_posts_reported - LEAST(b.indexed_post_count, b.serverside_posts_reported)), 0) 

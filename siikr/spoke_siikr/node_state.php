@@ -16,8 +16,11 @@ function maybe_build_n_stmts($db) {
 
 function build_nodestate_obj($db) {
     global $am_unlimited, $language, $deletion_rate, $n_stmts;
+    global $node_in_maintenance_mode; //may be defined in auth/config, 
+    //if true, will signal to the hub that this node should not be relied upon for searches
+    //unset or set to false again in auth/config when you have finished maintenance.
     $free_space_mb = capped_freespace($db);
-    $estimated_remaining_post_capacity = estimatePostIngestLimit($db, $freespace_mb);
+    $estimated_remaining_post_capacity = estimatePostIngestLimit($db, $free_space_mb);
     $result = [
         "have_blog" => false,
         "estimated_remaining_post_capacity" => $estimated_remaining_post_capacity,
@@ -40,6 +43,7 @@ function build_nodestate_obj($db) {
     $est_calls_remaining = min($hr_calls_remaining, $day_calls_remaining);
     $result["time_right_now"] = $last_stat_obj->req_time;
     $result["spoke_language"] = $language;
+    $result["down_for_maintenance"] = isset($node_in_maintenance_mode) && $node_in_maintenance_mode;
 
     if($last_stat_obj->response_code == 429) {    
         if($last_stat_obj?->est_reavailable != null) {
@@ -74,7 +78,9 @@ function build_blogstat_obj($db, $blog_uuid) {
                     "success" => $blogstats->success  === false ? 'FALSE' : 'TRUE',
                     "indexed_post_count" => $blogstats->indexed_post_count,
                     "serverside_posts_reported" => $blogstats->serverside_posts_reported,
-                    "index_request_count" => $blogstats->index_request_count
+                    "index_request_count" => $blogstats->index_request_count,
+                    "largest_indexed_post_id" => $blogstats->largest_indexed_post_id,
+                    "smallest_indexed_post_id" => $blogstats->smallest_indexed_post_id
                 ];
                 $result["blogstat_info"] = $response_info;
             

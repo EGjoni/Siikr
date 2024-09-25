@@ -1,8 +1,6 @@
 <?php
 //require_once './../node_state.php';
-$self_file = explode("/", $_SERVER["PHP_SELF"]); array_pop($self_file);
-$self_dir = implode("/", $self_file);
-require_once "$self_dir/../broadcast.php";
+require_once __DIR__."/../broadcast.php";
 $blog_uuid = null;
 
 if($argv[1] != null && $argv[2] != null) {

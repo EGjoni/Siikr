@@ -14,6 +14,7 @@ $node_obj = $db->prepare("SELECT * FROM siikr_nodes WHERE node_url = :node_url")
 
 function checkInWith($endpoint, $params, $nodeObj) {
     $node = unserialize(serialize($nodeObj));
+    //echo $params["blog_uuid"]."\n";
     $http_params = http_build_query($params);
     $options = ['http' => ['ignore_errors' => true]];
     $context = stream_context_create($options);
@@ -49,3 +50,4 @@ if($node_obj == false) {
     }
 }
 
+?>

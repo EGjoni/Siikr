@@ -10,6 +10,8 @@
  *  indexed_post_count: int, // number of posts this node has indexed  
  *  serverside_posts_reported: int, //number of posts this spoke thinks tumblr reports the blog to have
  *  index_request_count: int // how many times this spoke has been requested to index this blog.
+ *  largest_indexed_post_id: string //the largest post_id indexed from this blog
+ *  smallest_indexed_post_id: string //the smallest post_id indexed from this blog
  * }
  * time_right_now: unix epoch, // the current time, in this server's opinion
  * estimated_remaining_post_capacity: int, //estimate of the number of posts this spoke has diskspace for
@@ -17,6 +19,7 @@
  * estimated_calls_remaining: int //estimated number of api calls this spoke has left before getting rate limited again
  * estimated_reavailability: int //null or -1 if the spoke is currently capable of making calls, otherwise, the estimated number of seconds until this spoke is available to make calls again
  * need_help: boolean, // true if some error occurred. false/unset/null otherwise.
+ * down_for_maintenance: boolean, //indicates to the hub that this node should be ignored for searches
  * malformed: boolean // true if some error occurred and it doesn't seem to be on our end.
  * spoke_language: string //a two character iso-639 language code indicating the language this node is dedicated to. The hub will avoid routing blogs to nodes of the wrong language
  * }

@@ -1,4 +1,8 @@
 <?php
+try {
+    include_once 'auth/config.php';
+    $no_config = false;
+} catch (Exception $e) {}
 require_once "squid_game.php";
 $injection_base = '';
 $injectable = '
@@ -21,6 +25,7 @@ if($_GET['lemmein']==true) {
     </span>-->
 
 <?php
+    if(isset($node_in_maintenance_mode) && $node_in_maintenance_mode) $node_maintenance_mode_reminder = true;
     require_once "show_page.php";
     /*if (rand(0, 1) == 0) {
         require_once "show_page_boxxy.php";

@@ -38,7 +38,8 @@ function subblock_to_tumblr(&$siikr_block, $db_media_map, &$soFar) {
                     $formatObj->blog = (object)[];
                     $formatObj->blog->name = $f->name;
                     $formatObj->blog->url = $f->url;
-                    $formatObj->blog->uuid = $f->uuid;
+                    if(property_exists($f, "uuid"))
+                        $formatObj->blog->uuid = $f?->uuid;
                     @$tumblrized_block->formatting[] = $formatObj;
                 }
             }

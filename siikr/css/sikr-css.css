@@ -3,6 +3,8 @@
   --backgrnd : #2c4762;
   --backgrnd-flash : #3c5772;
   --advanced-background : white;
+  --backgrnd-maintenance : rgb(78, 9, 9);
+  --backgrnd-maintenance-mid : maroon;
   --advanced-borders: rgb(199, 199, 199);
   --disk-percent: 10%;
   --disk-light: 100%;
@@ -12,18 +14,21 @@
 }
 
 @keyframes hslAnimation {
-0%, 100% {
+  0%, 100% {
     background-color: #1c3248;
+  }
+  50% {
+      background-color: var(--backgrnd);
+  }
+
 }
-50% {
-    background-color: var(--backgrnd);
+@keyframes maintenanceHSL{
+  0%, 100% {
+    background-color: var(--backgrnd-maintenance);
 }
-50% {
-    /* background-color: hsl(152.74deg 22.03% 3.16%); */
-}
-75% {
-    /* background-color: hsl(270, 4%, 10%); */
-}
+  50% {
+      background-color: var(--backgrnd-maintenance);
+  }
 }
 
 
@@ -38,6 +43,11 @@ body {
 	font-weight: normal;
 	line-height: 1.4;
 	animation: hslAnimation 10s infinite cubic-bezier(0.42, 0, 0.52, 0.88) !important;
+}
+
+body.maintenance-mode {
+  background-color: var(--backgrnd-maintenance);
+  animation: maintenanceHSL 10s infinite cubic-bezier(0.42, 0, 0.52, 0.88) !important;
 }
 
 body.flashEffect {
@@ -656,6 +666,8 @@ input#query::placeholder {
   color: #FFFFFF99;
   height: 0px;
   overflow: visible;
+  width: 500px;
+  margin: auto;
   grid-column: search;
   grid-row: 1;
   top: 15em;
@@ -1775,6 +1787,10 @@ dialog#advanced-filter * {
     background: transparent;
 }
 
+.text-container a {
+  color: black;
+}
+
 .link-container img {
   width: 100%;
   max-height: 200px;
@@ -1788,6 +1804,41 @@ ul li, ol li {
   display: list-item !important;
 }
 
-.text-container a {
+.link-container a {
+  display: grid;
+  text-decoration: none;
+}
+
+.link-container a img {
+  grid-row: 1;
+  filter: brightness(0.6);
+}
+
+.link-container a h2 {
+  font-weight: 400;
+  /* text-decoration-line: underline; */
+  /* text-decoration-color: white; */
+  text-align: center;
+  align-self: center;
+  z-index: 2;
+  text-decoration-style: unset;
+  color: white;
+  grid-row: 1;
+  grid-column: 1;
+}
+
+.link-container a span {
+  grid-row: 1;
+  grid-column: 1;
+  display: grid;
+  z-index: 1;
   color: black;
+  /* text-underline-offset: 8px; */
+  text-decoration: unset;
+  /* text-decoration-line: unset; */
+  padding: 2%;
+  border-style: solid;
+  border-width: 1px;
+  border-radius: 7px;
+  border-color: #9999;
 }

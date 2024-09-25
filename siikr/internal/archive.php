@@ -13,7 +13,7 @@ require_once 'lease.php';
 //next two lines are so that we can show the user any search results while we happen to come across them in the indexing process
 $search_query = @$_GET['search_query']; 
 $search_options = @$_GET['search_options'];
-$server_blog_info = [];
+$server_blog_info = (object)[];
 $blog_uuid = null;
 function rollback() {
     global $db;
@@ -32,6 +32,7 @@ $blog_uuid = $current_blog->exec([$search_id])->fetchColumn();
 $establishLease->exec([$blog_uuid, $archiver_uuid]); //defined in lease.php
 $get_active_queries = $db->prepare("SELECT * FROM active_queries WHERE blog_uuid = :blog_uuid"); 
 $searches_array = $get_active_queries->exec(["blog_uuid" => $blog_uuid])->fetchAll(PDO::FETCH_OBJ);
+$search_notify_rate = 50; 
 
 $stmt_select_blog = $db->prepare("SELECT * FROM blogstats WHERE blog_uuid = ?");
 $db_blog_info = $stmt_select_blog->exec([$blog_uuid])->fetch(PDO::FETCH_OBJ);
@@ -79,6 +80,8 @@ try {
         "UPDATE blogstats SET most_recent_post_id = :most_recent_post_id, 
                         post_id_last_indexed = :post_id_successfully_indexed, 
                         post_id_last_attempted = :post_id_successfully_indexed, 
+                        smallest_indexed_post_id = LEAST(:post_id_successfully_indexed, blogstats.smallest_indexed_post_id),
+                        largest_indexed_post_id = LEAST(:post_id_successfully_indexed, blogstats.largest_indexed_post_id),
                         indexed_post_count = :indexed_count,
                         serverside_posts_reported = :serverside_posts_reported,
                         time_last_indexed = now(),
@@ -116,7 +119,10 @@ try {
     /**columns that don't need us to do extra junk*/
     $unprocessed_columns = ["blog_uuid", "tag_text", "index_version"];
     $unprocessed_str = ""; foreach($unprocessed_columns as $col) $unprocessed_str .= ", :$col as $col";
-    $insert_post_column_list = ["post_date", "blocksb", "is_reblog", "hit_rate", "ts_content", "ts_meta", ...$unprocessed_columns];
+    $insert_post_column_list = [
+        "post_date", "blocksb", "is_reblog", "deleted", "hit_rate", 
+        "has_text", "has_link", "has_chat", "has_ask", "has_images", "has_video", "has_audio",
+        "ts_content", "ts_meta", ...$unprocessed_columns];
     $withrec = "WITH rec AS (SELECT :post_id::BIGINT AS post_id, 
                 to_timestamp(:post_date::INT) AS post_date,
                 :blocksb::JSON AS blocksb,
@@ -211,11 +217,11 @@ try {
     
     function get_media_id(&$media_item) {
         global $stmt_upsert_media;
-        $title = property_exists($media_item, "title") && $media_item->title != null ? substr($media_item->title, 0, 250) : NULL;
-        $description =  property_exists($media_item, "description") && $media_item->description != null ? substr($media_item->description, 0, 1000) : NULL;
+        $title = $media_item?->title ?? NULL;
+        $description =  $media_item?->description ?? NULL;
         if($title != null) $title = ensure_valid_string($title);
         if($description != null) $description = ensure_valid_string($description);
-        $preview_url = property_exists($media_item, "preview_url") && $media_item->preview_url != null ? $media_item->preview_url : NULL;
+        $preview_url = $media_item?->preview_url ?? NULL;
         $will_insert = 
         ["media_url" => $media_item->media_url, 
         "preview_url"=> $preview_url, 
@@ -237,15 +243,14 @@ try {
         }
     }
 
-    function notify_search_results($post) {
-        global $db, $searches_array, $archiving_status, $disk_use;
-        $post_searches_results = execAllSearches($db, $searches_array, "p.post_id = :post_id", ["post_id" => $post->post_id]);
+    $output_arcstat = (object)[];
+    function notify_search_results($match_condition, $match_args, $notify_only = FALSE) {
+        global $db, $searches_array, $archiving_status, $disk_use, $isUpgrade;
+        $post_searches_results = execAllSearches($db, $searches_array, $match_condition, $match_args, $notify_only);//"p.post_id = :post_id", ["post_id" => $post->post_id]);
         $listener_result_map = [];
 
         $archiving_status->disk_used = $disk_use;
-        
-        $__arc_stat = serialize($archiving_status);
-        $arc_stat = unserialize($__arc_stat);
+        $arc_stat = copyvals($archiving_status);
 
         foreach($post_searches_results as $post_result_cont) {
             $post_result = $post_result_cont->results;
@@ -255,14 +260,21 @@ try {
             } else {$arc_stat->as_search_result = null;}
             $arc_stat->isUpgrade = $isUpgrade;
             queueEvent("INDEXEDPOST!$post_result_cont->search_id", $arc_stat);
+            $arc_stat = copyVals($archiving_status);
         }
         fireEventQueue();
     }
 
+    function copyvals($ofobj) {
+        $into = (object)[];
+        foreach($ofobj as $k => $v) $into->$k = $v;
+        return $into;
+    }
+
     function notify_tags($tags, $post_id) {
         global $db, $archiving_status, $disk_use, $blog_uuid, $resolve_queries, $abandonLease,
-        $stmt_insert_posts_tags, $searches_array, $stmt_insert_tag;
-        $__arc_stat = serialize($archiving_status);
+        $stmt_insert_posts_tags, $searches_array, $stmt_insert_tag, $server_blog_info, $archiver_uuid;
+        //$__arc_stat = serialize($archiving_status);
         // Insert tags into tags table and create relations in posts_tags table
         foreach ($tags as $tag) {
             if(check_delete($tag, $archiving_status->indexed_this_time, $blog_uuid, $db)) {
@@ -280,7 +292,7 @@ try {
             }
             $tagid = $stmt_insert_tag->exec(["tag_text" => $tag])->fetchColumn();
             $stmt_insert_posts_tags->exec([$blog_uuid, $post_id, $tagid]);
-            $arc_stat = unserialize($__arc_stat);
+            $arc_stat = copyvals($archiving_status);//unserialize($__arc_stat);
             $arc_stat->newTag = (object)[]; 
             $arc_stat->newTag->tag_id = $tagid;
             $arc_stat->newTag->tagtext = $tag;
@@ -443,9 +455,10 @@ try {
                         "has_audio" => $DENUM[$db_post_obj->has_audio],
                         "tag_text" => $tag_rawtext,
                         "index_version" => $archiver_version,
-                        "is_reblog" => $db_post_obj->is_reblog,
+                        "is_reblog" => $db_post_obj->is_reblog == 0 ? "FALSE" : "TRUE",
                         "hit_rate" => $db_post_obj->hit_rate,
                         "deleted" => 'FALSE'];
+                    
                     try { 
                         $db->query("SAVEPOINT insert_post");
                         if(count($db_post_obj->self_mentions_list) + count($db_post_obj->trail_mentions_list) > 0) {
@@ -514,8 +527,17 @@ try {
                     $post_last_indexed_info = $post_last_attempted_info;
                     $archiving_status->indexed_post_count = $db_blog_info->indexed_post_count;
                     $archiving_status->indexed_this_time += 1;
-                    notify_search_results($post);
                     
+                    notify_search_results("p.blog_uuid = :blog_uuid and p.post_date < :last_range_date", 
+                            ["blog_uuid" => $blog_uuid, "last_range_date" => $point_last_searched],
+                            $archiving_status->indexed_this_time > 0 && $archiving_status->indexed_this_time % $search_notify_rate != 0);
+                    
+                        $point_last_searched = $post->post_date;
+                    
+                    if($archiving_status->indexed_this_time % $search_notify_rate == 0) {
+                        $point_last_searched = $post->post_date;
+                    }
+                    if($archiving_status->indexed_this_time % 400 == 0) notifyHub();
                 } catch (Exception $e) {
                     $db->rollBack(); 
                     if($e->getCode() == "23505") { //post has already been indexed
@@ -623,7 +645,7 @@ try {
                                 }
                             }
                         }
-                        $newest_old_version_post = $get_newest_obsolete_post->exec(["blog_uuid"=>$blog_uuid, 'max_date'=> $max_date])->fetch(PDO::FETCH_OBJ);
+                        $newest_old_version_post = $get_newest_obsolete_post->exec(["blog_uuid"=>$blog_nuuid, 'max_date'=> $max_date])->fetch(PDO::FETCH_OBJ);
                         if($newest_old_version_post != false) {
                             $max_date = $newest_old_version_post->timestamp;
                             //echo "checking: $newest_old_version_post->post_id\n";
@@ -646,8 +668,9 @@ try {
     $set_blog_success_status->exec([$success_status, $blog_uuid]);
     $archiving_status->content= "All done! ".$archiving_status->indexed_post_count." posts archived, and ".$archiving_status->indexed_this_time." new posts indexed! (Try hitting the refresh button if you think I missed one of your results)";
     $archiving_status->disk_used= $disk_use;
-    sendEventToAll($searches_array, "FINISHEDINDEXING!", (object)$archiving_status); #notify the client
     notifyHub();
+    sendEventToAll($searches_array, "FINISHEDINDEXING!", (object)$archiving_status); #notify the client
+    
 
 } catch (Exception $e) {
     $error_string = "Error: " . $e->getMessage();
