@@ -28,9 +28,10 @@ function initSearch($username, $forward_params) {
         $archivingNode =  findBestArchivingNode($blog_info->blog_uuid, $blog_info);
         $ping_suggested = true;
         $new_archive = false;
-        if($searchNode == null && $archivingNode == null) {
-            $searchNode = askAllNodes($blog_info->blog_uuid, $blog_info);
-            $archivingNode = $searchNode;
+        if($archivingNode == null) {
+            $archivingNode = askAllNodes($blog_info->blog_uuid, $blog_info);
+            if($searchNode == null)
+                $searchNode = $archivingNode;
             $ping_suggested = false;
             $new_archive = true;
         }
@@ -38,7 +39,7 @@ function initSearch($username, $forward_params) {
             if($new_archive == true) {
                 registerToBlogNodeMap($blog_info->blog_uuid, $archivingNode);
             }
-            $blog_info->node_id = $archivingNode->node_id;
+            $blog_info->node_id = $archivingNode->node_id ?? $searchNode->node_id;
             $blog_info->indexed_post_count = $archivingNode->indexed_post_count;
             cacheBestNode($blog_info->blog_uuid, $archivingNode);
             if($searchNode->node_id != $archivingNode->node_id) {
