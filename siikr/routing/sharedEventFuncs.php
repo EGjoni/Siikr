@@ -212,7 +212,7 @@ function printOutputFor($resultVar) {
 
     //error_log("--------FROM ID: $myID -----------------");
     //error_log("--------TO IP: ".$_SERVER['REMOTE_ADDR']);
-    error_log("event: " .trim($response_tag)); 
+    //error_log("event: " .trim($response_tag)); 
     //error_log("data: $encoded \n"); 
 
     $result = "\n
