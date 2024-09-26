@@ -8,7 +8,8 @@ function maybe_build_n_stmts($db) {
         $n_stmts["get_blogcheck_stats"] = $db->prepare(
             "SELECT EXTRACT(EPOCH FROM time_last_indexed) AS time_last_indexed,
             is_indexing, success, indexed_post_count, 
-            serverside_posts_reported, index_request_count 
+            serverside_posts_reported, index_request_count, 
+            smallest_indexed_post_id, largest_indexed_post_id
             FROM blogstats WHERE blog_uuid = :blog_uuid");
     }
 

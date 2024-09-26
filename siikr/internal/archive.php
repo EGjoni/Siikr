@@ -81,7 +81,7 @@ try {
                         post_id_last_indexed = :post_id_successfully_indexed, 
                         post_id_last_attempted = :post_id_successfully_indexed, 
                         smallest_indexed_post_id = LEAST(:post_id_successfully_indexed, blogstats.smallest_indexed_post_id),
-                        largest_indexed_post_id = LEAST(:post_id_successfully_indexed, blogstats.largest_indexed_post_id),
+                        largest_indexed_post_id = GREATEST(:post_id_successfully_indexed, blogstats.largest_indexed_post_id),
                         indexed_post_count = :indexed_count,
                         serverside_posts_reported = :serverside_posts_reported,
                         time_last_indexed = now(),
@@ -317,9 +317,53 @@ try {
      * asynchronously notify the hub of new blog stuff to check.
      */
     function notifyHub() {
-        global $predir, $blog_uuid, $this_server_url;
-        $exec_string = "php ".$predir."spoke_siikr/async/notify_blogstat_update.php $blog_uuid $this_server_url";
-        exec("$exec_string  > /dev/null &");
+        global $predir, $blog_uuid, $this_server_url, $last_notification;
+        if(time() - $last_notification > 10) { 
+            $exec_string = "php ".$predir."spoke_siikr/async/notify_blogstat_update.php $blog_uuid $this_server_url";
+            $last_notification = time();
+            exec("$exec_string  > /dev/null &");
+        }
+    }
+
+
+    function makeNewFiber(&$params, $blog_uuid, &$limit_start, &$before_info) {
+        return new Fiber(
+            function() use (&$params, $blog_uuid, &$limit_start, &$before_info) {
+                $server_blog_info = null;
+                do { //apparently sometimes the api just flat out breaks if you ask for more posts than it has.
+                    $inner_tumblr_fiber = async_call_tumblr($blog_uuid, 'posts', $params);
+                    $inner_tumblr_fiber->start();
+                    while($inner_tumblr_fiber->isSuspended()) {
+                        $inner_tumblr_fiber->resume();
+                        Fiber::suspend();
+                    }
+                    if($inner_tumblr_fiber->isTerminated()) {
+                        $server_blog_info = $inner_tumblr_fiber->getReturn();
+                        if($server_blog_info == null) {
+                            if($limit_start/2 <= 1 && $params["notes_info"] == true) {
+                                $params["notes_info"] = false; //a lot of times the API breaking happens as a result of note data i guess, so  try without those before giving up  
+                            }
+                            $limit_start = $limit_start / 2;
+                        }
+                        if(isset($before_info) && property_exists($before_info, "inclusive") && $before_info->inclusive == true) {
+                            $contained = false;
+                            foreach($server_blog_info->posts as $post) {
+                                if($post->id_string == $before_info->post_id) {
+                                    $contained = true;
+                                    break;
+                                }
+                            }
+                            if(!$contained) {
+                                $before_info->timestamp = $before_info->actual_timestamp;
+                                $server_blog_info->posts = [$before_info, ...$server_blog_info->posts];
+                            }
+                        }
+                        $params["limit"] =  max((int)$limit_start, 1);
+                    }                
+                } while($server_blog_info == null && (int)$limit_start >= 1);
+                return $server_blog_info;
+            }
+        );
     }
 
     $loop_count = 0;
@@ -346,6 +390,7 @@ try {
         array_push($gap_queue, $last_adopted);
     }
     do {
+        $oldest_post_in_batch = null;
         $before_info = array_pop($gap_queue);
         $before_time = $before_info == null? null:$before_info->timestamp;
         $before_id = $before_info->id;
@@ -353,31 +398,48 @@ try {
             $isUpgrade = false; //gets set to true for notifications downstream
             $disk_use = get_disk_stats();        
             $params = ['limit' => $limit_start, 'notes_info' => "true", 'npf' => 'true', 'before' => $before_time, 'sort' => 'desc'];
-            do { //apparently sometimes the api just flat out breaks if you ask for more posts than it has.
-                $server_blog_info = call_tumblr($blog_uuid, 'posts', $params);
-                if($server_blog_info == null) {
-                    if($limit_start/2 <= 1 && $params["notes_info"] == true) {
-                        $params["notes_info"] = false; //a lot of times the API breaking happens as a result of note data i guess, so  try without those before giving up  
-                    }
-                    $limit_start = $limit_start / 2;
+            
+            if($initial_fiber == null) {  //first run               
+                $initial_fiber = makeNewFiber($params, $blog_uuid, $limit_start, $before_info);
+                $initial_fiber->start();
+                while($initial_fiber->isSuspended()) {
+                    $initial_fiber->resume();
+                    usleep(10); 
                 }
-                if($before_info?->inclusive == true) {
-                    $contained = false;
-                    foreach($server_blog_info->posts as $post) {
-                        if($post->id_string == $before_info->post_id) {
-                            $contained = true;
-                            break;
-                        }
-                        //echo ($before_info->timestamp - $post->timestamp)."\n";
-                    }
-                    if(!$contained) {
-                        $before_info->timestamp = $before_info->actual_timestamp;
-                        $server_blog_info->posts = [$before_info, ...$server_blog_info->posts];
-                        //echo "\nhuh???\n";
-                    }
+                if($initial_fiber->isTerminated()) {
+                    $server_blog_info = $initial_fiber->getReturn();
                 }
-                $params["limit"] =  max((int)$limit_start, 1);                
-            } while($server_blog_info == null && (int)$limit_start >= 1);
+            }
+
+            if($tumblr_fiber != null) {
+                while($tumblr_fiber->isSuspended()) $tumblr_fiber->resume();
+                if($tumblr_fiber->isTerminated()) {
+                    $pending_server_blog_info = $tumblr_fiber->getReturn();
+                    $tumblr_fiber = null;
+                }
+                else throw new Error("WAT");
+            }
+
+            if($pending_server_blog_info != null) {
+                
+                $server_blog_info = $pending_server_blog_info;
+                //$before_info = $oldest_post_in_batch == null ? $before_info : $oldest_post_in_batch;
+                //$before_time = $before_info == null? null:$before_info->timestamp;
+                //$before_id = $before_info->id;
+                
+                //$oldest_post_in_batch = $server_blog_info->posts[count($server_blog_info->posts)-1];
+                $pending_server_blog_info = null;
+            }
+            if($tumblr_fiber == null) {
+                foreach($server_blog_info->posts as &$p) {
+                    if($oldest_post_in_batch == null || ($p->timestamp < $oldest_post_in_batch->timestamp))
+                        $oldest_post_in_batch = &$p;
+                }
+                $params["before"] = $oldest_post_in_batch->timestamp;
+                $tumblr_fiber = makeNewFiber($params, $blog_uuid, $limit_start, $oldest_post_in_batch);
+                $tumblr_fiber->start();
+            }
+            
 
             if($server_blog_info == null)
                 $server_blog_info = (object)["posts"=>[]];
@@ -532,13 +594,28 @@ try {
                             ["blog_uuid" => $blog_uuid, "last_range_date" => $point_last_searched],
                             $archiving_status->indexed_this_time > 0 && $archiving_status->indexed_this_time % $search_notify_rate != 0);
                     
-                        $point_last_searched = $post->post_date;
+                        $point_last_searched = $post->date;
                     
                     if($archiving_status->indexed_this_time % $search_notify_rate == 0) {
-                        $point_last_searched = $post->post_date;
+                        $point_last_searched = $post->date;
                     }
                     if($archiving_status->indexed_this_time % 400 == 0) notifyHub();
+                    if($tumblr_fiber != null) { 
+                        if($tumblr_fiber->isSuspended()) $tumblr_fiber->resume();
+                        if($tumblr_fiber->isTerminated()) {
+                            $pending_server_blog_info = $tumblr_fiber->getReturn();
+                            $tumblr_fiber = null;
+                        }
+                    }
+
                 } catch (Exception $e) {
+                    if($tumblr_fiber != null) { 
+                        if($tumblr_fiber->isSuspended()) $tumblr_fiber->resume();
+                        if($tumblr_fiber->isTerminated()) {
+                            $pending_server_blog_info = $tumblr_fiber->getReturn();
+                            $tumblr_fiber = null;
+                        }
+                    }
                     $db->rollBack(); 
                     if($e->getCode() == "23505") { //post has already been indexed
                         $jump_triggered = true;  
@@ -551,6 +628,7 @@ try {
                     } 
                     throw $e;  
                 }
+                
             }
         } while (!empty($server_blog_info->posts));
         if($archiving_status->indexed_this_time % 400 == 0) notifyHub();

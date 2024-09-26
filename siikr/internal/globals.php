@@ -170,12 +170,85 @@ function log_api_call($status_code, $est_reavailable) {
         });
     }
     if($est_reavailable == null || $est_reavailable == -1) $est_reavailable = "NULL";
+    #TODO: make less slow
     $query = "INSERT INTO public.self_api_hist (req_time, response_code, est_reavailable) VALUES (NOW(), $status_code, $est_reavailable);
     REFRESH MATERIALIZED VIEW public.self_api_summary;";
+    while($r = pg_get_result($dbconn)) {
+        $r = $r;
+    }
     while(pg_connection_busy($dbconn)) {
         usleep(1000);
     }
+    
     pg_send_query($dbconn, $query);
+}
+
+
+function async_call_tumblr($blog_name_or_uuid, $request_type, $params=[], $with_meta = false, $asString = false) {
+    global $api_key; global $possible_encodings;
+    $params["api_key"] = $api_key;
+    $encodedBlogName = urlencode($blog_name_or_uuid);
+    $url = get_base_url($blog_name_or_uuid, $request_type).http_build_query($params);
+    $result_fiber =  new Fiber(
+        function() use ($url, $api_key, $possible_encodings, $with_meta, $asString) {
+            $mh = curl_multi_init();  
+            $ch = curl_init($url); 
+
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_multi_add_handle($mh, $ch);
+            
+            $count = 5;
+            do {
+                $status = curl_multi_exec($mh, $active);
+                if($active) {
+                    $select = curl_multi_select($mh, 0);
+                    if ($select === 0) {
+                        $count --;
+                        if($count == 0) {
+                            $count = 5;
+                            Fiber::suspend();
+                        }
+                    }
+                }
+            } while ($active && $status == CURLM_OK);
+
+            if ($status != CURLM_OK) {
+                throw new Exception("CURL error: " . curl_error($ch));
+            }
+            $response_s = curl_multi_getcontent($ch);
+
+            // Clean up
+            curl_multi_remove_handle($mh, $ch);
+            curl_multi_close($mh);
+
+            $detected_encoding = mb_detect_encoding('UTF-8', $possible_encodings);
+            $response_j = mb_convert_encoding($response_s, 'UTF-8', $detected_encoding);
+            $response = json_decode($response_j);
+            $status_code = 200;
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                $response = (object)[];
+                //sometimes tumblr responds with a proper json object, other times with a redirect, and there's no way of know when it will do which
+                $response->meta = parseHeadersToObj($http_response_header);
+            }
+            $status_code = $response->meta->status;
+            $est_reavailable = -1;
+            if($status_code == 429) {
+                $http_response_header = $http_response_header ?? [];
+                $est_reavailable = determine_reavailability($http_response_header);
+            }
+            
+            log_api_call($status_code, $est_reavailable);
+            if($asString) {
+                return $response_j;
+            }
+            if($with_meta) {
+                return $response;
+            }
+            
+            return $response->response;
+        }
+    );
+    return $result_fiber;
 }
 
 
@@ -500,11 +573,10 @@ function getPostSearchString($query_text, $match_condition="p.blog_uuid = :q_uui
 
 /**query match for just posts. Useful if you want to posthoc and*/
 function getInnerSearchString($tsquery_hun, $tsquery_meta, /*$tsquery_stem,*/ $tsquery_literal, $match_condition="p.blog_uuid = :q_uuid ", $filter_string="") {
-    
+    //$tsquery_stem as stem_q,
     $result = "WITH queries AS (
             SELECT $tsquery_hun as en_hun_q, 
-            $tsquery_meta as meta_q, 
-            --$tsquery_stem as stem_q,
+            $tsquery_meta as meta_q,            
             $tsquery_literal as literal_q
         )
         SELECT 

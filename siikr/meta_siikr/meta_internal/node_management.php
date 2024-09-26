@@ -39,7 +39,7 @@ $upsert_blog_nodemap_stats = $db->prepare(
         success = EXCLUDED.success,
         indexed_posts = EXCLUDED.indexed_posts,
         largest_indexed_post_id = EXCLUDED.largest_indexed_post_id,
-        smallest_indexed_post_id = EXCLUDED.smallest_indexed_post_id
+        smallest_indexed_post_id = EXCLUDED.smallest_indexed_post_id,
         last_index_count_modification_time = CASE
             WHEN blog_node_map.indexed_posts = EXCLUDED.indexed_posts THEN blog_node_map.last_index_count_modification_time
             ELSE now()
