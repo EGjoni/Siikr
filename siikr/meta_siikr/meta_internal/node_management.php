@@ -51,6 +51,10 @@ $update_nodeStats = $db->prepare(
         last_pinged_ourtime = now(),
         last_pinged_nodetime = to_timestamp(:node_ping_time),
         free_space_mb = :free_space_mb,
+        total_space_mb = :total_space_mb, 
+        node_name = :node_name,
+        node_flare = :node_flare,
+        node_notice = :node_notice,
         estimated_calls_remaining = :estimated_calls_remaining,
         reliability = LEAST(reliability, :reliability),
         node_language = :lang,
@@ -84,6 +88,10 @@ function updateNodeStats($node) {
     $update_nodeStats->exec([
         "node_id" => $node->node_id, 
         "free_space_mb" => $node->free_space_mb,
+        "node_name" => $node?->node_name,
+        "node_flare" => $node?->node_flare,
+        "node_notice" => $node?->node_notice,
+        "total_space_mb" => $node?->total_space_mb,
         "reliability" => $node->reliability,
         "estimated_calls_remaining" => (int)$node->estimated_calls_remaining,
         "node_ping_time" => $node->time_right_now,
@@ -236,13 +244,16 @@ $cached_prep = $db->prepare(
         sn.node_id,
         sn.node_url,
         sn.free_space_mb,
-        sn.down_for_maintenance,
+        sn.total_space_mb,
+        sn.node_name,
+        sn.node_flare,
         EXTRACT(epoch FROM sn.last_pinged_ourtime)::INT as last_pinged_ourtime,
         EXTRACT(epoch FROM sn.last_pinged_nodetime)::INT as last_pinged_nodetime,
         EXTRACT(epoch FROM bnm.last_index_count_modification_time)::INT as last_index_count_modification_time,
         bnm.success, bnm.is_indexing, bnm.indexed_posts as indexed_post_count,
         sn.estimated_calls_remaining,
-        sn.reliability
+        sn.reliability,
+        sn.down_for_maintenance
     FROM cached_blog_node_map cbnm, 
         blog_node_map bnm, 
         siikr_nodes sn 
@@ -259,15 +270,18 @@ $known_prep = $db->prepare(
         bnm.indexed_posts as indexed_post_count, 
         sn.node_url,
         sn.free_space_mb,
+        sn.total_space_mb,
+        sn.node_name,
+        sn.node_flare,
         EXTRACT(epoch FROM last_pinged_ourtime)::INT as last_pinged_ourtime,
         EXTRACT(epoch FROM last_pinged_nodetime)::INT as last_pinged_nodetime,
         sn.estimated_calls_remaining,
         sn.reliability,
-        sn.node_id
+        sn.node_id,
+        sn.down_for_maintenance
     FROM blog_node_map bnm, siikr_nodes sn 
     WHERE bnm.blog_uuid = :blog_uuid 
-    AND bnm.node_id = sn.node_id
-    AND sn.down_for_maintenance = false");
+    AND bnm.node_id = sn.node_id");
 
 /**Checks to see if we know of a node that already has a bunch of posts archived from this blog. This is intended for a quick initial search. Afterward, a call should be made to 'findBestArchiverNode' to determine if the blog will need to be transferred over to a seperate node for archiving.
 * Attempts to return the best node for the job if we do returns null if no nodes no of the blog or none are viable
@@ -302,11 +316,15 @@ function findBestArchivingNode($blog_uuid, $blog_info=null) {
         $cached_node->from_cache = true;
         return $cached_node;
     } else {        
-        $known_hosts = $known_prep->exec(["blog_uuid"=>$blog_uuid])->fetchAll(PDO::FETCH_OBJ);
-        foreach($known_hosts as $host) {
-            $host->indexed_post_count *= $deletion_rate;
-        }
-        if($known_hosts) {
+        $known_hosts_init = $known_prep->exec(["blog_uuid"=>$blog_uuid])->fetchAll(PDO::FETCH_OBJ);
+        if($known_hosts_init) {
+            $known_hosts = [];
+            foreach($known_hosts_init as $host) {
+                if($host->down_for_maintenance == false)
+                    $known_hosts[] = $host;
+                $host->indexed_post_count *= $deletion_rate;
+            }
+
             if(count($known_hosts) == 1) {
                 if(property_exists($known_hosts[0], "indexed_post_count") && $known_hosts[0]->indexed_post_count > 0) {
                     $known_hosts[0]->indexed_post_count /= $deletion_rate;

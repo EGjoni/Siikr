@@ -14,7 +14,7 @@
 require_once './../internal/globals.php';
 $blog_uuid = $_GET["blog_uuid"];
 
-$db = new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
+$db = getDb();//new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
 $args = [
     "blog_uuid" => $blog_uuid, 
     "index_version" => $_GET["version"], 

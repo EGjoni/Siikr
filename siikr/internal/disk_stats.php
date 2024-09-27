@@ -1,13 +1,17 @@
 <?php
 require_once 'disks.php';
 
-function get_disk_stats() {
-    global $db_disk;
-    $diskpath = $db_disk;
-    $total_diskspace = disk_total_space($diskpath);
-    $free_space = disk_free_space($diskpath);
-    $used_percent = (1 - $free_space/$total_diskspace)*100;
+function get_used_percent() {
+    global $db_disk, $db_disk_min_headroom;
+    $total_diskspace = disk_total_space($db_disk) - $db_disk_min_headroom;
+    $free_space = disk_free_space($db_disk);
+    $used_percent = (1 -($free_space/$total_diskspace))*100;
     return $used_percent;
+  }
+
+  function get_allocated_space() {
+    global $db_disk, $db_disk_min_headroom;
+    return disk_total_space($db_disk) - $db_disk_min_headroom;
   }
 
   function sizeToBytes($size) {

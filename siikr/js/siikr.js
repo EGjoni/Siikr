@@ -255,20 +255,24 @@ async function processMoreResults(obj) {
 }
 
 async function resetProgressListeners(obj) {
-	search_id = obj.search_id; 
+	search_id = obj.search_id == null ? search_id : obj.search_id; 
+	document.listen_to = obj.listen_to;
+	document.searched_server_url = obj.searched_server_url;
+	document.archiving_server_url = obj.archiving_server_url;
 	blogInfo = {
 		search_id : search_id,
 		blog_uuid: obj.blog_uuid,
 		blog_name: obj.blog_name
 	};
 
+	setNodeHints();
 	progressListener.removeListener("indexbegin");
 	progressListener.removeListener("indexconclude");
 	progressListener.removeListener("indexpostupdate");
 	progressListener.removeListener("indextagupdate");
 	noticeListener.removeListener("noticelistener");
 	noticeListener.removeListener("errorlistener");
-	reinitPseudoSocket('https://'+obj.server+"/routing/serverEvents.php");		
+	reinitPseudoSocket('https://'+obj.archiving_server_url+"/routing/serverEvents.php");		
 	
 	progressListener.setListener("indexbegin",
 		"INDEXNG!"+search_id, {},
@@ -591,7 +595,7 @@ function updateIndexState(serverEvent) {
 	}
 	progressText.innerHTML = progressString; 
 	progressBar.style.width = (100*(eventMessage.indexed_post_count)/eventMessage.serverside_posts_reported) + " %";
-	updateDiskUseBar(eventMessage.disk_used);
+	updateDiskUseBar(eventMessage.disk_used, nodesByURL['https://'+document.archiving_server_url]?.diskUseBar);
 	//console.log("indexed post : " + eventMessage.indexed +"/"+eventMessage.server_total + " ----- " + eventMessage.post_id);
 }
 
@@ -601,7 +605,7 @@ async function concludeIndexState(serverEvent) {
 		fadeStatusTextTo(eventMessage.content);
 		reSort(sortBy.value, false, true, true);
 	}
-	updateDiskUseBar(eventMessage.disk_used);
+	updateDiskUseBar(eventMessage.disk_used, nodesByURL['https://'+document.archiving_server_url]?.diskUseBar);
 	if(eventMessage.deleted) clearSearchResults();
 	pseudoSocket.disconnect();
 	//console.log("indexing finished!");
@@ -897,7 +901,7 @@ function makeFormattedBlock(npfbloc_hard, blocknum_start, media_by_id){
 			if(f.t == "col") preAdd += f.hex+"'";
 			bstringArr[f.s].pre.push(preAdd);
 			//if(bstringArr.length <= f.e) f.e--;
-			bstringArr[f.e-1].post.push(formatMap[f.t][1]);
+			bstringArr[Math.min(bstringArr.length-1, f.e-1)].post.push(formatMap[f.t][1]);
 		}
 	}
 	function wrapSubtype(block, bstringArr, listStack, blockNum) {
@@ -1096,16 +1100,19 @@ function hydrateSubpost(contentContainer, mediaItems) {
 					media = mediaItems[content.db_id];
 					if(media != null) {
 						newnode.querySelector("a").setAttribute("href", 'https://'+media.media_url);
-						newnode.querySelector("a h2").innerText = media.title;
+						let poster = newnode.querySelector("a .poster");
+						poster.querySelector("h2").innerText = media.title;
 						if(media.description != null) {
-							newnode.querySelector("a span").innerText = media.description;
+							newnode.querySelector(".link-description").innerText = media.description;
 						}
 					
 						if(media.preview_url != null) {
 							let imgelem = document.createElement("img");
+							imgelem.classList.add("poster-img");
+							poster.classList.remove("basic-head");
 							imgelem.setAttribute("loading", "lazy"); 
 							imgelem.setAttribute("src", 'https://'+media.preview_url);
-							newnode.querySelector("a span").appendChild(imgelem);
+							poster.appendChild(imgelem);
 						}
 					} else {
 						newnode.innerText = "LINK INFO UNAVAILABLE. Your blog's index might be in the middle of an upgrade. Should come through eventually,";

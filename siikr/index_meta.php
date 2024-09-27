@@ -1,8 +1,21 @@
 <?php
 require_once "squid_game.php";
+try {
+    require_once 'internal/SPDO.php';
+    $db = getDb();
+    $nodes = $db->query("SELECT node_id, node_url, node_name, node_flare, total_space_mb, free_space_mb, down_for_maintenance from siikr_nodes")->fetchAll(PDO::FETCH_OBJ);
+    $nodes = $nodes == false ? [] : $nodes;
+    $nodes_j = json_encode($nodes);
+} catch (Exception $e) {
+    ?>
+    <h1>NO NODES FOUND. Maybe you're not a real hub?</h1>
+    <?php
+}
+
 $injection_base = 'meta_siikr/meta_';
 $injectable = "
-var subdir = 'meta_siikr/meta_';";
+var subdir = 'meta_siikr/meta_';
+var node_list = $nodes_j;";
 if($_GET['lemmein']==true) {
     require_once "show_page.php";
 } else if($squid_game_warn == false && $squid_game == true) {

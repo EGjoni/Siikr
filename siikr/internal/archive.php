@@ -4,7 +4,7 @@ require_once 'disk_stats.php';
 require_once 'post_processor.php';
 //echo phpversion();
 $archiver_uuid = uuid_create_v4();
-$db = new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
+$db = getDb();
 $media_table = 'media';
 
 require_once 'lease.php';
@@ -400,7 +400,7 @@ try {
         $before_id = $before_info == null? null : $before_info->id;
         do {
             $isUpgrade = false; //gets set to true for notifications downstream
-            $disk_use = get_disk_stats();        
+            $disk_use = get_used_percent();        
             $params = ['limit' => $limit_start, 'notes_info' => "true", 'npf' => 'true', 'before' => $before_time, 'sort' => 'desc'];
             
             if(!isset($initial_fiber) || $initial_fiber == null) {  //first run               

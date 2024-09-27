@@ -1242,7 +1242,11 @@ CREATE TABLE public.siikr_nodes (
     estimated_calls_remaining integer DEFAULT 5000,
     last_pinged_nodetime timestamp without time zone DEFAULT now(),
     node_language character(2) DEFAULT 'en'::bpchar,
-    down_for_maintenance boolean DEFAULT false
+    down_for_maintenance boolean DEFAULT false,
+    total_space_mb double precision,
+    node_name character varying(64),
+    node_flare text,
+    node_notice text
 );
 
 

@@ -14,8 +14,12 @@
  *  smallest_indexed_post_id: string //the smallest post_id indexed from this blog
  * }
  * time_right_now: unix epoch, // the current time, in this server's opinion
+ * total_capacity_mb: int, //total space used and unused available on this node,
+ * node_name: varchar(64), //a pretty name to givr your node for display and mnemonic purposes,
+ * node_flare: text, //anything ridiculous thing you might want to subject a user to while their blog indexes. The hub might choose to show it to them,
+ * node_notice: text, //it's like AOL instant messenger, but for database administrators, and only if they happen to check this column for some reason
  * estimated_remaining_post_capacity: int, //estimate of the number of posts this spoke has diskspace for
- * free_space_mb: float, //raw allocated capacity in mb
+ * free_space_mb: float, //raw remaining storage capacity in mb
  * estimated_calls_remaining: int //estimated number of api calls this spoke has left before getting rate limited again
  * estimated_reavailability: int //null or -1 if the spoke is currently capable of making calls, otherwise, the estimated number of seconds until this spoke is available to make calls again
  * need_help: boolean, // true if some error occurred. false/unset/null otherwise.
@@ -29,7 +33,7 @@ require_once './../internal/globals.php';
 require_once 'node_state.php';
 $blog_uuid = $_GET["blog_uuid"];
 
-$db = new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
+$db = getDb();//new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
 $result = build_nodestate_obj($db);
 $blogstat_obj = build_blogstat_obj($db, $blog_uuid);
 

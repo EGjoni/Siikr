@@ -17,7 +17,7 @@ require_once './../internal/globals.php';
  * The basic idea is to query t
  */
 
-$db = new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
+$db = getDb();//new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
 $args = ["blog_uuid" => $blog_uuid, "index_version" => $_GET["version"]];
 $before_requested = $_GET["before"];
 $after_requested = $_GET["after"];

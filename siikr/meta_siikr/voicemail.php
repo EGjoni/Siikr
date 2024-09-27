@@ -3,7 +3,7 @@
  * nodes request that the hub ask them for information, and the hub does so at its discretion
  */
 require_once './../internal/globals.php';
-$db = new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
+$db = getDb();//new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
 require_once 'meta_internal/node_management.php';
 
 

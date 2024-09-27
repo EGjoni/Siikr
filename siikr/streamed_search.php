@@ -75,11 +75,13 @@ function beginSearch($db) {
         $search_only = $meta_search_params["search_only"];
         
         if(!$is_insurance_check) {
-            $activate_search = $db->prepare("INSERT INTO active_queries (query_text, query_params, blog_uuid) VALUES (:query_text, :query_params, :blog_uuid) ON CONFLICT (query_text, query_params, blog_uuid) DO UPDATE SET blog_uuid = EXCLUDED.blog_uuid returning search_id");
-            $activate_search->execute(["query_text" => $query, "query_params"=>$search_params, "blog_uuid" => $blog_info->blog_uuid]);
-            $blog_info->search_id = $activate_search->fetchColumn();
+            if(!$search_only) {
+                $activate_search = $db->prepare("INSERT INTO active_queries (query_text, query_params, blog_uuid) VALUES (:query_text, :query_params, :blog_uuid) ON CONFLICT (query_text, query_params, blog_uuid) DO UPDATE SET blog_uuid = EXCLUDED.blog_uuid returning search_id");
+                $activate_search->execute(["query_text" => $query, "query_params"=>$search_params, "blog_uuid" => $blog_info->blog_uuid]);
+                $blog_info->search_id = $activate_search->fetchColumn();
+            }
             $search_id_info = (object)[]; 
-            $search_id_info->server = $meta_search_params["listen_to"];
+            $search_id_info->archiving_server_url = normalizeUrl($meta_search_params["listen_to"]);
             if($is_insurance_check != true) {
                 /* clientside script checks for missed results on completion, 
                 but this makes me paranoid about infinite loops if I put the wrong FINISHEDINDEXING event, and anyway it's more efficient just to skip so...*/
@@ -92,7 +94,9 @@ function beginSearch($db) {
                 }
             }
             
-            $search_id_info->search_id = $blog_info->search_id;
+            $search_id_info->searched_server_url = $_SERVER["HTTP_HOST"];
+            if(!$search_only)
+                $search_id_info->search_id = $blog_info->search_id;
             $search_id_info->valid = true;
             $search_id_info->is_init = true;
             $search_id_info->blog_uuid = $blog_info->blog_uuid;
@@ -200,5 +204,5 @@ header('Content-Type: application/json');
 header('X-Accel-Buffering: no');
 ob_implicit_flush(0);
 ob_start('ob_gzhandler');
-$db = new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
+$db = getDb();
 beginSearch($db);

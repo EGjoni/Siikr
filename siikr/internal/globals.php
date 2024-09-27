@@ -35,73 +35,8 @@ function uc($str, $pos) {
     return mb_substr($str, $pos, 1, 'UTF-8');
 }
 
-/**Like PDOStatement but with an exec convenience function that returns the statement again for easy chaining with fetch calls
- * An error is thrown on failure instead of returning false
-*/
-class SPDOStatement extends PDOStatement {
-    private $dbh;
-    public $execution_time = null;
-    protected function __construct($dbh) {$this->dbh = $dbh;}
-    /**
-     * @param array delta if true, sets a value on this prepared statement storing how long its last execution took to complete
-     */
-    public function exec($params, $deltas=false) {
-        $qtime = null;
-        if($deltas) $qtime = microtime(true);
-        else $this->execution_time = null;
-        try {
-            $result = $this->execute($params) ? $this : throw new PDOException("Execution failed");
-        } catch (PDOException $e) {
-            $dbg = $this->debug($params, true, true); 
-            //$e->bylines  = explode("\n", $dbg);
-            throw $e;
-        }
-        catch(PDOError $e){throw $e;}
-        
-        if($deltas) $this->execution_time = microtime(true)- $qtime;
-        return $result;
-    }
-
-    /**convenience function. binds multiple values in provided associative array*/
-    public function bindValues($params) {
-        foreach($params as $k => $v) {
-            $this->bindValue(":$k", $v);
-        }
-    }
-
-
-    public function debug($params = null, $asStr=false, $paramSummary=false) {
-        $interpolatedQuery = $this->queryString;
-        if($params == null) echo $interpolatedQuery;
-        else {
-            if($paramSummary) {
-                foreach($params as $key => &$value) {
-                    if(is_string($value)) {
-                        $value = "...";
-                    }
-                }
-            }
-            foreach ($params as $key => $value) {                
-                $interpolatedQuery = str_replace(":$key", "'" . addslashes($value) . "'", $interpolatedQuery);
-            }
-            if($asStr) return $interpolatedQuery;
-            else echo $interpolatedQuery;
-        }
-    }
-    public function getBuilt($params = null) {
-        return $this->debug($params, true);
-    }
-}
-
-/**Like PDO but prepared statements contain an exec convenience function that can be chained with subsequent fetch calls and throw an Error where execute returns false*/
-class SPDO extends PDO {
-    public function __construct($dsn, $username = null, $passwd = null, $options = null) {
-        parent::__construct($dsn, $username, $passwd, $options);
-        $this->setAttribute(PDO::ATTR_STATEMENT_CLASS, [SPDOStatement::class, [$this]]);
-    }
-}
-
 $predir = __DIR__.'/../';
+require_once 'SPDO.php';
 require_once $predir.'auth/credentials.php';
 require_once $predir.'auth/config.php';
 require_once 'disk_stats.php';
@@ -296,7 +231,7 @@ function call_tumblr($blog_name_or_uuid, $request_type, $params=[], $with_meta =
         }
         $response = json_decode($response_j);
     }
-    
+
     $status_code = 200;
     if (json_last_error() !== JSON_ERROR_NONE) {
         $response = (object)[];
@@ -842,17 +777,20 @@ function resolve_uuid($db, $blogNameFromUser, $blogInfoFromTumblr, $blogNameFrom
 function ensureSpace($db, $db_blogInfo) {
 	global $db_disk;
 	global $db_min_disk_headroom;
+    global $other_anticipated_posts;
     $blog_uuid = $db_blogInfo->blog_uuid;
 	$indexed_post_count = min($db_blogInfo->serverside_posts_reported, $db_blogInfo->indexed_post_count);
 	$posts_anticipated = $db_blogInfo?->serverside_posts_reported - $indexed_post_count;
 	$averagePostSize = 3300;
 	$anticipatedSpaceRequired = $averagePostSize * $posts_anticipated;
-    $other_anticipated_posts = $db->prepare("SELECT COALESCE(SUM(b.serverside_posts_reported - LEAST(b.indexed_post_count, b.serverside_posts_reported)), 0) 
-                            FROM blogstats b, archiver_leases l WHERE l.blog_uuid = b.blog_uuid AND l.blog_uuid != :blog_uuid")->exec(['blog_uuid' => $blog_uuid])->fetchColumn();
+    if($other_anticipated_posts == null) {
+        $other_anticipated_posts = $db->prepare("SELECT COALESCE(SUM(b.serverside_posts_reported - LEAST(b.indexed_post_count, b.serverside_posts_reported)), 0) 
+            FROM blogstats b, archiver_leases l WHERE l.blog_uuid = b.blog_uuid AND l.blog_uuid != :blog_uuid")->exec(['blog_uuid' => $blog_uuid])->fetchColumn();
+    }
     $anticipatedSpaceRequired += $averagePostSize * $other_anticipated_posts;
     $free_space = disk_free_space($db_disk);
-	$current_wal = $db->prepare("SELECT wal_bytes FROM pg_stat_wal")->exec([])->fetchColumn();
-	$max_wal = sizeToBytes($db->prepare("SHOW max_wal_size")->exec([])->fetchColumn());
+	$current_wal = $db->query("SELECT wal_bytes FROM pg_stat_wal")->fetchColumn();
+	$max_wal = sizeToBytes($db->query("SHOW max_wal_size")->fetchColumn());
     
 	$required_wal_headroom = $max_wal;// - $current_wal;
 	$free_space -= $required_wal_headroom + $db_min_disk_headroom;
@@ -861,20 +799,20 @@ function ensureSpace($db, $db_blogInfo) {
 }
 
 /**returns an estimate of the number of posts we have room for */
-function estimatePostIngestLimit($db, $free_space = null) {
-    $averagePostSize = 3300;
-    if($free_space == null)
-        $free_space = capped_freespace($db);
-    return $free_space/$averagePostSize;
+function estimatePostIngestLimit($db, $free_space_mb = null) {
+    $averagePostSize = 0.0033;
+    if($free_space_mb == null)
+        $free_space_mb = capped_freespace($db);
+    return $free_space_mb/$averagePostSize;
 }
 
-/**returns the number of megabytes of space siikr's db is still allowed to use */
+/**returns the number of bytes of space siikr's db is still allowed to use */
 function capped_freespace($db) {
     global $db_disk;
 	global $db_min_disk_headroom;
     $free_space = disk_free_space($db_disk);
-    $current_wal = $db->prepare("SELECT wal_bytes FROM pg_stat_wal")->exec([])->fetchColumn();
-	$max_wal = sizeToBytes($db->prepare("SHOW max_wal_size")->exec([])->fetchColumn());
+    $current_wal = $db->query("SELECT wal_bytes FROM pg_stat_wal")->fetchColumn();
+	$max_wal = sizeToBytes($db->query("SHOW max_wal_size")->fetchColumn());
 	$required_wal_headroom = $max_wal;// - $current_wal;
     $free_space -= $required_wal_headroom + $db_min_disk_headroom;
     return $free_space;

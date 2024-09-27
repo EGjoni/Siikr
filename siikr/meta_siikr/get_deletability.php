@@ -11,7 +11,7 @@
  * This indicates that it is safe to delete the blog.
  */
 require_once __DIR__."/../internal/globals.php";
-$db = new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
+$db = getDb();//new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
 
 $requested_by = 'https://'.normalizeURL($_GET["requested_by"]);
 

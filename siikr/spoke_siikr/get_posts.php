@@ -26,7 +26,7 @@ require_once './../internal/globals.php';
 $blog_uuid = $_GET["blog_uuid"];
 $id_list = file_get_contents('php://input');
 
-$db = new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
+$db = getDb();//new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
 $index_version = $_GET["version"];
 $result_limit = isset($_GET["limit"]) ? $_GET["limit"] : 200;
 $appendParams = [$blog_uuid, $index_version, $result_limit, $blog_uuid];

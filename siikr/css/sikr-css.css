@@ -671,7 +671,7 @@ input#query::placeholder {
   grid-column: search;
   grid-row: 1;
   top: 15em;
-  position: relative;
+  /* position: relative; */
 }
 
 
@@ -1572,24 +1572,124 @@ a.name-container {
   padding-top: 4px;
 }
 
-#texted-dark {
-    width: 200px;
-    height: 1.5em;
-    font-size: 0.85em;
-    grid-row: 1;
-    /*font-weight: bold;*/
-    grid-column: 1;
-}
-#texted-light {
-    width: 200px;
-    height: 1.5em;
-    font-size: 0.85em;
-    /*font-weight: bold;*/
-    color: white;
-    filter: drop-shadow(1px 1px 2px #0009);
+
+#nodelist-container {
+  max-width: 15em;
+  width: 15em;
+  display: grid;
+  justify-content: end;
+  row-gap: 5px;
+  right: 0px;
+  float: right;
+  position: fixed;
+  bottom: 0px;
 }
 
-#disk-use {
+.texted-dark {
+  /* width: 200px; */
+  height: 1.5em;
+  /* filter: invert(1); */
+  width: 99%;
+  font-size: 0.85em;
+  height: 100%;
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  text-align: center;
+  grid-row: 1;
+  /*font-weight: bold;*/
+  grid-column: 1;
+}
+.texted-light {
+  width: 200px;
+  height: 1.5em;
+  font-size: 0.85em;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  /* margin: auto; */
+  /*font-weight: bold;*/
+  color: white;
+  filter: drop-shadow(1px 1px 2px #0009);
+}
+
+.disk-use {
+  position: fixed;
+  background:#fffa;
+  width: fit-content;
+  padding: 0px 5px;
+  height: 1.5em;
+  bottom: 15px;
+  right: 15px;
+  overflow: hidden;
+  box-shadow: 0px 3px 10px #0009 inset;
+}
+.total-disk {
+/* height: 2px; */
+grid-template-rows: [everything] 2.5em;
+display: grid;
+text-align: center;
+text-align: center;
+align-content: center;
+/* background: #555; */
+box-shadow: 1px -4px 13px 0px #c3c3c3e6 inset, 5px 2px 7px 1px #000000e6 inset;
+}
+.free-disk {
+  width: var(--disk-percent);
+  height: 2.5em;
+  grid-row: 1;
+  grid-column: 1;
+  background-color: rgb(var(--disk-r), var(--disk-g), 0);/*hsl(var(--disk-hue), 90%, var(--disk-light));*/
+  filter: drop-shadow(-2px 0px 8px black);
+}
+.used-disk {
+  width: var(--disk-percent);
+  /* height: 2.5em; */
+  max-width: 100%;
+  overflow: hidden;
+  grid-row: 1;
+  text-align: center;
+  margin-top: 2px;
+  margin-bottom: 2px;
+  grid-column: 1;
+  box-shadow: 3px 10px 10px #ffffff52 inset;
+  background-color: rgba(var(--disk-r), var(--disk-g), 0, 0.6);/*hsl(var(--disk-hue), 90%, var(--disk-light));*/
+  filter: drop-shadow(-2px 0px 8px black);
+}
+
+.texted-dark {
+  /* color: currentColor; */
+  /* width: 200px; */
+  height: 1.5em;
+  /* filter: invert(1); */
+  width: 99%;
+  font-size: 0.85em;
+  height: 100%;
+  /* filter: invert(1); */
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  text-align: center;
+  grid-row: 1;
+  /*font-weight: bold;*/
+  grid-column: 1;
+}
+.texted-light {
+  width: 200px;
+  height: 1.5em;
+  font-size: 0.85em;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  /* margin: auto; */
+  /*font-weight: bold;*/
+  color: white;
+  filter: drop-shadow(1px 1px 2px #0009);
+}
+
+.disk-use {
     position: fixed;
     background:#fffa;
     width: fit-content;
@@ -1600,13 +1700,16 @@ a.name-container {
     overflow: hidden;
     box-shadow: 0px 3px 10px #0009 inset;
 }
-#total-disk {/* height: 2px; */
+.total-disk {
+	/* height: 2px; */
 	grid-template-rows: [everything] 2.5em;
 	display: grid;
 	text-align: center;
 	align-content: center;
+	background: #bdbdbd;
+	box-shadow: 5px -3px 13px 0px #aeaeaee6 inset;
 }
-#free-disk {
+.free-disk {
     width: var(--disk-percent);
     height: 2.5em;
     grid-row: 1;
@@ -1614,9 +1717,10 @@ a.name-container {
     background-color: rgb(var(--disk-r), var(--disk-g), 0);/*hsl(var(--disk-hue), 90%, var(--disk-light));*/
     filter: drop-shadow(-2px 0px 8px black);
 }
-#used-disk {
+.used-disk {
     width: var(--disk-percent);
-    height: 2.5em;
+    /* height: 2.5em; */
+    max-width: 100%;
     overflow: hidden;
     grid-row: 1;
     grid-column: 1;
@@ -1807,6 +1911,10 @@ ul li, ol li {
 .link-container a {
   display: grid;
   text-decoration: none;
+  border-style: solid;
+  border-width: 1px;
+  border-radius: 10px;
+  border-color: #5555;
 }
 
 .link-container a img {
@@ -1814,13 +1922,13 @@ ul li, ol li {
   filter: brightness(0.6);
 }
 
-.link-container a h2 {
+.link-container .poster h2, .link-container .poster .poster-img {
   font-weight: 400;
   /* text-decoration-line: underline; */
   /* text-decoration-color: white; */
   text-align: center;
   align-self: center;
-  z-index: 2;
+  /* z-index: 2; */
   text-decoration-style: unset;
   color: white;
   grid-row: 1;
@@ -1828,7 +1936,7 @@ ul li, ol li {
 }
 
 .link-container a span {
-  grid-row: 1;
+  grid-row: 2;
   grid-column: 1;
   display: grid;
   z-index: 1;
@@ -1837,8 +1945,76 @@ ul li, ol li {
   text-decoration: unset;
   /* text-decoration-line: unset; */
   padding: 2%;
-  border-style: solid;
-  border-width: 1px;
-  border-radius: 7px;
-  border-color: #9999;
+  /* border-style: solid; */
+  /* border-width: 1px; */
+  /* border-radius: 7px; */
+  /* border-color: #9999; */
+}
+
+.disk-use-bar.down_for_maintenance {
+    filter: brightness(0.7) grayscale(1) blur(1.5px);
+}
+
+.disk-use-bar {
+    filter: contrast(0.9) brightness(0.895);
+    border-width: 4px;
+    border-style: double;
+    border-color: #0000;
+}
+
+.disk-use-bar.is_archiving {
+    filter: drop-shadow(0px 0px 5px #FF0) brightness(1.1) contrast(1.1) blur(0px);
+    border-style: dotted;
+    border-color: #ff9800;
+    padding: 0px;
+    /* filter: drop-shadow(0px 0px 5px #FF0); */
+}
+
+b {}
+
+.texted-dark * {
+    /* filter: invert(1); */
+}
+
+.disk-use-bar.is-archiving .total-disk {
+    border-width: 4px;
+    border-style: double;
+    border-color: #0000;
+}
+
+.disk-use-bar.is_archiving .total-disk {
+    /* border-width: 4px; */
+    /* border-style: dotted; */
+    /* border-color: #0087ff; */
+}
+
+.disk-use-bar.was_search_provider {
+    filter: drop-shadow(0px 0px 5px #FF0) brightness(1.1) contrast(1.1) blur(0px);
+    border-style: dotted;
+    border-color: #00d6ff;
+    padding: 0px;
+    /* filter: drop-shadow(0px 0px 5px #FF0); */
+}
+
+.poster {
+    display: grid;
+}
+
+.poster h2 {
+    z-index: 2;
+}
+
+.poster.basic-head h2 {
+    color: black;
+    z-index: 2;
+    padding: 4px;
+}
+
+.link-container {
+    margin: 2px;
+    padding: 2px;
+}
+
+.texted-light * {
+    display: contents;
 }

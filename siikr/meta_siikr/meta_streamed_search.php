@@ -4,7 +4,14 @@ $username = $_GET["username"];
 header('Content-Type: application/json');
 header('X-Accel-Buffering: no');
 ob_implicit_flush(0);
-$db = new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
+
+try { 
+    require_once './../internal/SPDO.php';
+    $db = getDb();
+} catch (Exception $e) {
+    $a =1;
+}
+//$db = new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
 require_once './meta_internal/node_management.php';
 $checkinQueue = [];
 $forward_params = $_GET;
@@ -56,6 +63,9 @@ function initSearch($username, $forward_params) {
             cleanStaleCacheEntries();
         }
     } catch ( Exception $e) {
+        if(!isset($blog_info)) {
+            $blog_info = (object)[];
+        }
         $blog_info->valid = false;
         $blog_info->display_error = $e->getMessage();
         echo json_encode($blog_info);

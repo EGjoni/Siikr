@@ -1,11 +1,12 @@
 <?php
-$scriptVer = 75;
-require_once 'internal/disks.php';
+$scriptVer = 80;
+require_once 'internal/disk_stats.php';
 try {
-	$diskpath = $db_disk;
-	$total_diskspace = disk_total_space($diskpath);
-	$free_space = disk_free_space($diskpath);
-	$used_percent = (1.0 - ($free_space / $total_diskspace)) * 100.0;
+	$diskpath = $db_disk;   
+    
+    $total_diskspace = get_allocated_space()/(1024*1024); 
+    $free_space = disk_free_space($db_disk)/(1024*1024);
+    $used_percent = get_used_percent();
 	$used_percent = round($used_percent, 2);
 
 } catch (Exception $e) {
@@ -102,6 +103,17 @@ try {
     <button onclick="document.getElementById('imageDialog').close();">Close</button>
 </dialog>
 <div id="templates" style="display:none;">
+    <div class="disk-use-bar">
+        <div class="total-disk">
+            <div class="used-disk">
+                <div class="texted-light"> %disk used</div>
+            </div>
+            <div class="texted-dark">%disk used</div>
+            <!--<div id="free-disk">
+
+            </div>-->
+        </div>
+    </div>
      <div class = "row"></div>
      <span class = "word-feature tooltip-container">
         <span class = "lexeme"></span>
@@ -123,8 +135,8 @@ try {
     </span>
     <div class="link-container">
         <a>
-            <h2></h2>
-            <span> </span>
+            <div class="poster basic-head"><h2></h2></div>
+            <span class="link-description"> </span>
         </a>
     </div>
     <div class="tag-autocomplete">
@@ -185,6 +197,7 @@ try {
     <img src="" id="fullSizeImage" alt="Full Size Display">
     <button onclick="document.getElementById('imageDialog').close();">Close</button>
 </dialog>
+<span id="nodelist-container"></span>
 <!--<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="0" height="0">
     <defs>
         <filter id="noise-blur-filter">
@@ -198,17 +211,7 @@ try {
     </defs>
 </svg>-->
 
-<div id="disk-use">
-    <div id="total-disk">
-        <div id="used-disk">
-            <div id="texted-light"> %disk used</div>
-        </div>
-        <div id="texted-dark">%disk used</div>
-        <!--<div id="free-disk">
 
-        </div>-->
-    </div>
-</div>
 <script src="js/pseudosocket/PseudoSocket.js?v=<?php echo $scriptVer; ?> "></script>
 <script>
     function showImage(img) {
@@ -218,30 +221,70 @@ try {
         fullSizeImage.src = fullImageUrl; // Set the source for the dialog image
         dialog.showModal(); // Show the dialog
     }
-    function updateDiskUseBar(usedPercent) {
-        let diskuseelem = document.getElementById("disk-use");
-        let diskString = parseInt(usedPercent)+"% of diskspace used";
+    let diskUseBase = document.querySelector(".disk-use-bar");
+    let diskUseContainer = document.querySelector("#nodelist-container");
+    var nodesByURL = {};
+
+    function initDiskUseBars(node_info) {
+        let nodeListCont = document.getElementById("nodelist-container");
+        
+        node_info.forEach(n => {
+            n.free_space_mb = parseInt(n.free_space_mb);
+            nodesByURL[n.node_url] = n;
+            if(n.diskUseBar == null) {
+                n.diskUseBar = diskUseBase.cloneNode(true);
+                diskUseContainer.appendChild(n.diskUseBar);
+                n.diskUseBar.forNode = n;
+                if(n.down_for_maintenance) 
+                    n.diskUseBar.classList.add("down_for_maintenance");                
+                
+            }
+            let node_ratio = (1-(n.free_space_mb / myTotal)) * 100;
+            updateDiskUseBar(null, n.diskUseBar); 
+        });
+    }
+
+    function setNodeHints() {
+        let archivingNode = nodesByURL['https://'+document.archiving_server_url];
+        let searchingNode = nodesByURL['https://'+document.searched_server_url];
+        archivingNode?.diskUseBar.classList.add("is_archiving");
+        searchingNode?.diskUseBar.classList.add("was_search_provider");
+    }
+
+    function updateDiskUseBar(usedPercent, bar) {
+        let freeTotal = 0;
+        let node = bar.forNode;
+        node_list.forEach(n => {
+            n.free_space_mb = parseFloat(n.free_space_mb);       
+            freeTotal += n.free_space_mb;           
+        });
+
+        usedPercent = parseInt(100*(1-(node.free_space_mb/freeTotal)));
+        let diskuseelem = bar;//document.getElementById("disk-use");
+        let diskString = node.node_name ?? "Node: "+node.node_id;//parseInt(usedPercent)+"% of diskspace used";
+        let lightText = bar.querySelector(".texted-light");
+        let darkText = bar.querySelector(".texted-dark");
         if(usedPercent > 97) {
             diskuseelem.style.height = '2.5em';
-            diskuseelem.style.width = '30em';
+            diskuseelem.style.width = 'auto';
             lightText.style.width = 'auto';
             darkText.style.width = 'auto';
-            diskString = "<b>Disk Status:</b> Everything's fucked. How could <a href='https://tumblr.com/antinegationism'>antinegationism</a> let this happen?";
+            diskString = node.node_name ?? "Node: "+node.node_id;//"<b>Disk Status:</b> Everything's fucked. How could <a href='https://tumblr.com/antinegationism'>antinegationism</a> let this happen?";
         }
         else if(usedPercent > 95) {
             diskuseelem.style.height = '2.5em';
             diskuseelem.style.width = 'auto';
             lightText.style.width = 'auto';
             darkText.style.width = 'auto';
-            diskString = "<b>Disk Status:</b> Freakishly low, call <a href='https://tumblr.com/antinegationism'>antinegationism</a>.";
+            diskString = node.node_name ?? "Node: "+node.node_id;//"<b>Disk Status:</b> Freakishly low, call <a href='https://tumblr.com/antinegationism'>antinegationism</a>.";
         }
         else if(usedPercent > 90) {
             diskuseelem.style.width = 'auto';
-            diskString = "<b>Disk Status:</b> Getting kinda low.";
+            diskString = node.node_name ??"<b>Disk "+node.node_id+" Status:</b> Getting kinda low.";
         }
         if(usedPercent <= 80) {
             diskuseelem.style.width = 'auto';
-            diskString = "<b>Disk Status:</b> Everything's fine."
+            diskString = node.node_name ??"<b>Node "+node.node_id+" Status:</b> Everything's fine."
         }
 
         lightText.innerHTML = diskString;
@@ -257,6 +300,11 @@ try {
         diskred = parseInt(225*diskred/norm);
         diskgreen = parseInt(225*diskgreen/norm);
 
+        //let freeElem = bar.querySelector(".free-disk");
+        let usedDisk = bar.querySelector(".used-disk");
+        usedDisk.style.width = usedPercent +'%';
+        usedDisk.style.backgroundColor = 'rgb('+diskred+','+diskgreen+','+0+','+0.6+')';
+
         /*lightText.textContent = parseInt(usedPercent)+"% of diskspace used";
         darkText.textContent = parseInt(usedPercent)+"% of diskspace used";*/
 
@@ -269,8 +317,11 @@ try {
     }
     var lightText = document.getElementById("texted-light");
     var darkText = document.getElementById("texted-dark");
+    var myTotal = <?php echo $total_diskspace; ?>;
+    var myFree = <?php echo $free_space; ?>;
     var usedPercent = <?php echo $used_percent; ?>;
-    updateDiskUseBar(usedPercent);
+    
+    //updateDiskUseBar(usedPercent);
 </script>
 <script>
     /*window.setInterval(()=>{
@@ -282,6 +333,10 @@ try {
     var scriptVersion = <?php echo $scriptVer; ?>;
     <?php echo $injectable?>
     var alwaysPrepend = "";
+    if(node_list == null || node_list.length == 0) {
+        var node_list = [{free_space_mb: myFree}];
+    }
+    initDiskUseBars(node_list);
     
 </script>
 <script src="js/wordcloud.js?v=<?php echo $scriptVer; ?> "></script>
