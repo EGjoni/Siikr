@@ -136,7 +136,7 @@ function executeFunctionFor($info, $messageOnly) {
     ]; 
     $messageOnly = json_decode("".$messageOnly, true);
     $data['event_message'] = $messageOnly;
-    $query_params = resolveParams($messageOnly, $info['query_params']);
+    $query_params = resolveParams($messageOnly, $info['query_params'] ?? []);
     $result = [];
 
     $result['error_status'] = "success";

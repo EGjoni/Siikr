@@ -10,8 +10,8 @@ $media_table = 'media';
 require_once 'lease.php';
 
 //next two lines are so that we can show the user any search results while we happen to come across them in the indexing process
-$search_query = @$_GET['search_query']; 
-$search_options = @$_GET['search_options'];
+$search_query = isset($_GET['search_query']) ? $_GET['search_query']: null; 
+$search_options = isset($_GET['search_options']) ? $_GET['search_options']: null;
 $server_blog_info = (object)[];
 $blog_uuid = null;
 function rollback() {
@@ -341,6 +341,7 @@ try {
                         if($server_blog_info == null) {
                             if($limit_start/2 <= 1 && $params["notes_info"] == true) {
                                 $params["notes_info"] = false; //a lot of times the API breaking happens as a result of note data i guess, so  try without those before giving up  
+                                
                             }
                             $limit_start = $limit_start / 2;
                         }
@@ -359,7 +360,9 @@ try {
                         }
                         $params["limit"] =  max((int)$limit_start, 1);
                     }                
-                } while($server_blog_info == null && (int)$limit_start >= 1);
+                } while($server_blog_info == null && $limit_start >= 0.5);
+                //start increasing the post request count gradually after finding the fucked up post
+                $limit_start = max(2, min(50, (int)$limit_start * 4));
                 return $server_blog_info;
             }
         );
@@ -381,6 +384,8 @@ try {
     $max_loop_count = count($gap_queue) * 2;
     $response_post_num = 0;
     $limit_start = 50;
+    $tumblr_fiber = null;
+    $pending_server_blog_info = null;
     require_once 'adopt_blog.php';
     $last_adopted = gather_foreign_posts($blog_uuid, $archiver_version, $this_server_url, 
                         $oldest_post_indexed_info?->timestamp ?? null, 
@@ -398,7 +403,7 @@ try {
             $disk_use = get_disk_stats();        
             $params = ['limit' => $limit_start, 'notes_info' => "true", 'npf' => 'true', 'before' => $before_time, 'sort' => 'desc'];
             
-            if($initial_fiber == null) {  //first run               
+            if(!isset($initial_fiber) || $initial_fiber == null) {  //first run               
                 $initial_fiber = makeNewFiber($params, $blog_uuid, $limit_start, $before_info);
                 $initial_fiber->start();
                 while($initial_fiber->isSuspended()) {
@@ -442,7 +447,7 @@ try {
 
             if($server_blog_info == null)
                 $server_blog_info = (object)["posts"=>[]];
-            else $limit_start = min(50, (int)$limit_start * 4);
+            
             
             foreach ($server_blog_info->posts as $post) {
                 $post->id = $post->id_string;

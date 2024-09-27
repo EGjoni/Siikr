@@ -1,7 +1,7 @@
 <?php
 require_once 'internal/globals.php';
 header('Content-Type: application/json');
-ob_start('gz_handler');
+ob_start('ob_gzhandler');
 
 //$db_user = "www-data";
 $blog_uuid = $_GET['blog_uuid'];
@@ -12,15 +12,17 @@ if ($blog_uuid == null) {
 	//$db_user = $userInfo["name"];
 }
 $db = new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
-
-$blog_name = $argc > 1 ? $argv[1] : null;
+$blog_name = null;
+if(isset($argc)) 
+	$blog_name = $argc > 1 ? $argv[1] : null;
 if ($blog_uuid == null) {
 	$blog_uuid = $db->prepare("SELECT blog_uuid FROM blogstats WHERE blog_name = :blog_name")->exec(["blog_name" => $blog_name])->fetchColumn();
 }
 
 $stmt_select_blog = $db->prepare("SELECT blog_uuid, post_count_at_stat::BIGINT, last_stats_update FROM wordclouded_blogs WHERE blog_uuid = ?");
 $blog_info = $stmt_select_blog->exec([$blog_uuid])->fetch(PDO::FETCH_OBJ);
-$user_posts_on_stat = $blog_info->post_count_at_stat;
+if($blog_info != null)
+	$user_posts_on_stat = $blog_info->post_count_at_stat;
 
 $fingerprint = (object) [];
 if ($blog_info->last_stats_update == null) {

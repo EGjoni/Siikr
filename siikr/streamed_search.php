@@ -2,8 +2,8 @@
 require_once './internal/globals.php';
 $index_disabled = false;
 
-$offset = $_GET["offset"];
-$limit = $_GET["limit"];
+$offset = isset($_GET["offset"]) ? $_GET["offset"] : null;
+$limit = isset($_GET["limit"])? $_GET["limit"] : null;
 
 $init_stride = 15;
 $MAX_LIMIT = 99999;

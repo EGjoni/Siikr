@@ -194,11 +194,7 @@ function async_call_tumblr($blog_name_or_uuid, $request_type, $params=[], $with_
         function() use ($url, $api_key, $possible_encodings, $with_meta, $asString) {
             $mh = curl_multi_init();  
             $ch = curl_init($url); 
-
-            // To store headers
             $headers = [];
-
-            // Function to capture headers
             curl_setopt($ch, CURLOPT_HEADERFUNCTION, function($curl, $header) use (&$headers) {
                 $len = strlen($header);
                 $header = explode(':', $header, 2);
@@ -216,7 +212,7 @@ function async_call_tumblr($blog_name_or_uuid, $request_type, $params=[], $with_
             $count = 5;
             do {
                 $status = curl_multi_exec($mh, $active);
-                if ($active) {
+                if($active) {
                     $select = curl_multi_select($mh, 0);
                     if ($select === 0) {
                         $count--;
@@ -232,27 +228,31 @@ function async_call_tumblr($blog_name_or_uuid, $request_type, $params=[], $with_
                 throw new Exception("CURL error: " . curl_error($ch));
             }
             $response_s = curl_multi_getcontent($ch);
-
-            // Clean up
+            
             curl_multi_remove_handle($mh, $ch);
             curl_multi_close($mh);
 
-            $detected_encoding = mb_detect_encoding($response_s, $possible_encodings);
-            $response_j = mb_convert_encoding($response_s, 'UTF-8', $detected_encoding);
+            $response_j = $response_s;
             $response = json_decode($response_j);
-            $status_code = 200;
+            $status_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            if(json_last_error() & (JSON_ERROR_UTF16 | JSON_ERROR_UTF8 | JSON_ERROR_CTRL_CHAR) > 0) {
+                $response_j = ensure_valid_string($response_s);
+                if(json_last_error() == JSON_ERROR_CTRL_CHAR) {
+                    $response_j = preg_replace('/[[:cntrl:]]/', '', $response_j);
+                }
+                $response = json_decode($response_j);
+            }
 
-            if (json_last_error() !== JSON_ERROR_NONE) {
+            if (json_last_error() !== JSON_ERROR_NONE && $status_code == 200) {
+                
                 $response = (object)[];
                 // Sometimes Tumblr responds with a proper json object, other times with a redirect, and there's no way of knowing when
                 $response->meta = parseHeadersToObj($headers); // Use captured headers
             }
-
-            // Check for status in headers if it's not in the response JSON
             if (isset($headers['Status'])) {
                 $status_code = (int) $headers['Status'];
             } else {
-                $status_code = $response->meta->status ?? 200;
+                $status_code = $response->meta->status ?? $status_code;
             }
 
             $est_reavailable = -1;
@@ -261,6 +261,8 @@ function async_call_tumblr($blog_name_or_uuid, $request_type, $params=[], $with_
             }
             
             log_api_call($status_code, $est_reavailable);
+
+            if($status_code == 500) return null;
 
             if ($asString) {
                 return $response_j;
@@ -285,9 +287,16 @@ function call_tumblr($blog_name_or_uuid, $request_type, $params=[], $with_meta =
     $url = get_base_url($blog_name_or_uuid, $request_type).http_build_query($params);
     $context = stream_context_create($options);
     $response_s = file_get_contents($url, false, $context);
-    $detected_encoding = mb_detect_encoding('UTF-8', $possible_encodings);
-    $response_j = mb_convert_encoding($response_s, 'UTF-8', $detected_encoding);
+    $response_j = $response_s;
     $response = json_decode($response_j);
+    if(json_last_error() & (JSON_ERROR_UTF16 | JSON_ERROR_UTF8 | JSON_ERROR_CTRL_CHAR) > 0) {
+        $response_j = ensure_valid_string($response_s);
+        if(json_last_error() == JSON_ERROR_CTRL_CHAR) {
+            $response_j = preg_replace('/[[:cntrl:]]/', '', $response_j);
+        }
+        $response = json_decode($response_j);
+    }
+    
     $status_code = 200;
     if (json_last_error() !== JSON_ERROR_NONE) {
         $response = (object)[];
@@ -358,6 +367,12 @@ function extract_reset_time($headers, $resetHeader) {
     return null;
 }
 
+
+
+
+
+
+
 function parseHeadersToObj($http_response_header) {
     $status_code = extractFirstStatusCode($http_response_header);
     $fake_obj = (object)["meta"=> (object)["status" => $status_code]];
@@ -370,6 +385,8 @@ function parseHeadersToObj($http_response_header) {
     }
     return $fake_obj;
 }
+
+
 
 function extractFirstStatusCode($http_response_header) {
     foreach ($http_response_header as $header) {
