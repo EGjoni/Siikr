@@ -8,10 +8,10 @@ $blog_uuid = $_GET['blog_uuid'];
 $limit = $_GET["limit"] ?? 100;
 
 if ($blog_uuid == null) {
-	$userInfo = posix_getpwuid(posix_geteuid());
+	//$userInfo = posix_getpwuid(posix_geteuid());
 	//$db_user = $userInfo["name"];
 }
-$db = new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
+$db = getDb();//new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
 $blog_name = null;
 if(isset($argc)) 
 	$blog_name = $argc > 1 ? $argv[1] : null;

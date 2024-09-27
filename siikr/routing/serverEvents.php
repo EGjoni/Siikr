@@ -40,9 +40,9 @@ $rawInput = file_get_contents('php://input');
 $baseInterests = isset($_GET["interests"]) ? $_GET["interests"] : null;
 $input = $_POST ?: json_decode($rawInput, TRUE);
 
-$generalVals = $input["gvl"]; 
-$paramVals = $input["pvl"];
-$paramKeys = $input["pkl"];
+$generalVals = isset($input["gvl"]) ? $input["gvl"] : []; 
+$paramVals = isset($input["pvl"]) ? $input["pvl"] : []; 
+$paramKeys = isset($input["pkl"]) ? $input["pkl"] : []; 
 $interestsJSON = isset($input["interests"]) ? $input["interests"] : json_decode($baseInterests);
 $subInfo = $interestsJSON;
 $wildcardMap = [];

@@ -174,7 +174,7 @@ function trulyDeleteBlog($db, $blog_uuid) {
 
 function insertNewNentries($db, $blog_uuid) {
 
-    $old_post_count = $get_start_post_count->exec([$blog_uuid]);
+    //$old_post_count = $get_start_post_count->exec([$blog_uuid]);
     
 
 }

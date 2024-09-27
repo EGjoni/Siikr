@@ -125,10 +125,11 @@ function ingest_posts($blog_uuid, $post_list) {
     global $delete_existing_mp_links;
     global $rows_updated;
     global $stmt_insert_posts_media;
-    global $post_id_last_attempted, $post_last_attempted_info, $search_notify_rate, $point_last_searched; 
+    global $post_id_last_attempted, $post_last_indexed_info, $post_last_attempted_info, $search_notify_rate, $point_last_searched; 
 
     $post_last_indexed = null;
     foreach($post_list as &$post) {
+        $post_last_attempted_info = $post;
         try {
             if(!amLeader($db, $blog_uuid, $archiver_uuid)) {
                 $abandonLease->execute(["leader_uuid" => $archiver_uuid]);
@@ -199,22 +200,25 @@ function ingest_posts($blog_uuid, $post_list) {
                         try {
                             $useStatement->exec($common_inserts);
                         } catch(Exception $ei) {
-                            $e2 = $ei;}
+                            $e2 = $ei;
+                            $db->rollBack();                            
+                        }
                         $rows_updated = $useStatement->rowCount();
                         if($rows_updated > 0) {
                             $archiving_status->indexed_this_time -=1;
                             $db_blog_info->indexed_post_count -= 1;
                             $archiving_status->upgraded += 1;
-                        $delete_existing_mp_links->exec(["post_id"=>$post->post_id]); //whipe old media_links for upgrade
+                            $delete_existing_mp_links->exec(["post_id"=>$post->post_id]); //whipe old media_links for upgrade
                             $isUpgrade = true;
                             $rows_updated++;
                             addToReanalysisQueue($blog_uuid);
-                        }
-                        
-                        if($isUpgrade == false) 
+                        } else if($isUpgrade == false) {
+                            $db->rollBack();
                             throw $e;
+                        }
 
                     } else {
+                        $db->rollBack();
                         throw $e;
                     }
                 }
@@ -236,7 +240,7 @@ function ingest_posts($blog_uuid, $post_list) {
                 "blog_uuid" => $blog_uuid]);
             $db->commit();
             $post_id_last_indexed = $post_id_last_attempted;
-            $post_last_indexed_info = $post_last_attempted_info;
+            $post_last_indexed_info = $post;
             $archiving_status->indexed_post_count = $db_blog_info->indexed_post_count;
             $archiving_status->indexed_this_time += 1;
             notify_search_results("p.blog_uuid = :blog_uuid and p.post_date < :last_range_date", 
@@ -250,10 +254,12 @@ function ingest_posts($blog_uuid, $post_list) {
             }
             if($archiving_status->indexed_this_time % 400 == 0) notifyHub();
         }  catch(Exception $e) { 
-            throw $e;
+            echo "adopt_blog:  ".$e->getMessage()."\n";
+            break;
         }
     }
-    return $post_last_indexed;
+
+    return $post_last_indexed_info;
 }
 
 function gather_foreign_posts($blog_uuid, $archiver_version, $this_server_url, $before_timestamp=null, $after_timestamp=null) {
