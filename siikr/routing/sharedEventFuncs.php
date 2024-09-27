@@ -2,15 +2,17 @@
 function getRelevantSubscribersForPattern($eventPatt) {
      global $subscribersMap; 
      global $wildcardMap;
-     $results = $subscribersMap[$eventPatt]; 
-     if($results == null) {
+     
+     if(!isset($subscribersMap[$eventPatt])) {
         $results = [];
         foreach($wildcardMap as $wildcardPatt => $funcList) {
-            $matches = strpos($swildcardPatt, $eventPatt, 0);//, strlen($subscriberPatt), false);
+            $matches = strpos($wildcardPatt, $eventPatt, 0);//, strlen($subscriberPatt), false);
             if($matches === 0) {
                 $results = array_merge($results, $funcList);
             }
         }
+    } else {
+        $results = $subscribersMap[$eventPatt];
     }
     return $results;
  }
@@ -94,12 +96,9 @@ function amendSubscribersMapWithWildcardMatches() {
         $event_pattern = decompress_event_pattern($event_pattern);
         $query_obj = isset( $s['qo']) ? $s['qo'] : null;
         $query_obj = decompress_query_object($query_obj);
-        $qf = $query_obj["queryFunction"];
-        $qp = $query_obj["params"];
-        $query_function = null;
-        $query_params = null;
+        $qf = isSet($query_obj) ? $query_obj["queryFunction"] : null;
+        $qp = isSet($query_obj) ? $query_obj["params"] : null;
         $formatting_status = "Well formed";
-        $class_instance = null;        
         $cleanParams = [];
 
         if(isset( $cleanParams['data'])) {
@@ -124,21 +123,12 @@ function amendSubscribersMapWithWildcardMatches() {
     }
 }
 
-function cleanArray($arr){
-    $cleanResult = [];
-    foreach($arr as $a) {
-        $cleanResult[] = sani($a);
-    }
-    return $cleanResult;
-}
 
 function executeFunctionFor($info, $messageOnly) {
     //global $subscribersMap; 
     //$info = $subscribersMap[strval($objId)]; 
-    $func_name = $info['query_function'];
     $event_pattern = $info['event_pattern'];
     $response_tag = $info['s_response_tag'];
-    $class_instance = $info['class_instance'];
     $formatting_status = $info['formatting_status'];
     $data = [
         's_response_tag' => $response_tag, 
@@ -146,7 +136,7 @@ function executeFunctionFor($info, $messageOnly) {
     ]; 
     $messageOnly = json_decode("".$messageOnly, true);
     $data['event_message'] = $messageOnly;
-    $query_params = resolveParams($messageOnly, $info['query_params']);
+    $query_params = resolveParams($messageOnly, $info['query_params'] ?? []);
     $result = [];
 
     $result['error_status'] = "success";

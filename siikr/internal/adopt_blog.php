@@ -127,8 +127,7 @@ function ingest_posts($blog_uuid, $post_list) {
     global $stmt_insert_posts_media;
     global $post_id_last_attempted, $post_last_attempted_info, $search_notify_rate, $point_last_searched; 
 
-
-    $repair_mode = true;
+    $post_last_indexed = null;
     foreach($post_list as &$post) {
         try {
             if(!amLeader($db, $blog_uuid, $archiver_uuid)) {
@@ -212,7 +211,7 @@ function ingest_posts($blog_uuid, $post_list) {
                             addToReanalysisQueue($blog_uuid);
                         }
                         
-                        if($isUpgrade == false && $repair_mode == false) 
+                        if($isUpgrade == false) 
                             throw $e;
 
                     } else {
@@ -254,7 +253,7 @@ function ingest_posts($blog_uuid, $post_list) {
             throw $e;
         }
     }
-    return $post;
+    return $post_last_indexed;
 }
 
 function gather_foreign_posts($blog_uuid, $archiver_version, $this_server_url, $before_timestamp=null, $after_timestamp=null) {
@@ -273,10 +272,12 @@ function gather_foreign_posts($blog_uuid, $archiver_version, $this_server_url, $
             $response = file_get_contents($fullUrl, false, $context);
             $results = json_decode($response);            
             ingest_posts($blog_uuid, $results);
-            $after_timestamp = $results[0]->timestamp;
-            $oldest_returned = $results[count($results)-1];
-            if($before_timestamp == null || isset($oldest_returned)) {
-                $before_timestamp = min($before_timestamp, $oldest_returned->timestamp);
+            if(count($results) > 0 ) {
+                $after_timestamp = $results[0]->timestamp;
+                $oldest_returned = $results[count($results)-1];
+                if($before_timestamp == null || isset($oldest_returned)) {
+                    $before_timestamp = min($before_timestamp, $oldest_returned->timestamp);
+                }
             }
         }
     } while(count($results) >= 200);
@@ -289,8 +290,10 @@ function gather_foreign_posts($blog_uuid, $archiver_version, $this_server_url, $
         $response = file_get_contents($fullUrl, false, $context);
         $results = json_decode($response);
         ingest_posts($blog_uuid, $results);
-        $oldest_returned = $results[count($results)-1];
-        $before_timestamp = $oldest_returned->timestamp;
+        if(count($results) > 0 ) {
+            $oldest_returned = $results[count($results)-1];
+            $before_timestamp = $oldest_returned->timestamp;
+        }
     } while(count($results) >=200);
     
 

@@ -37,13 +37,13 @@ register_shutdown_function('shutdown');
 
 
 $rawInput = file_get_contents('php://input');
-$baseInterests = $_GET["interests"];
+$baseInterests = isset($_GET["interests"]) ? $_GET["interests"] : null;
 $input = $_POST ?: json_decode($rawInput, TRUE);
 
 $generalVals = $input["gvl"]; 
 $paramVals = $input["pvl"];
 $paramKeys = $input["pkl"];
-$interestsJSON = $input["interests"];
+$interestsJSON = isset($input["interests"]) ? $input["interests"] : json_decode($baseInterests);
 $subInfo = $interestsJSON;
 $wildcardMap = [];
 

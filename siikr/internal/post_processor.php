@@ -123,7 +123,7 @@ function extract_db_content_from_post($post) {
         $soFar["trail_users"] =[];
         
         foreach ($post->trail as $trail_item) {
-            if(@$trail_item?->blog?->name != null) {
+            if(property_exists($trail_item, "blog") && $trail_item->blog->name != null) {
                 $soFar["trail_users"][$trail_item->blog->name] = true;
                 addHintCandidate($trail_item->blog->name, $deactivationHints);
             } else {
@@ -408,15 +408,16 @@ function convert_to_dual_form($block, &$soFar) {
                 $inline_links[] = normalizeURL($f->url);
             }
         }
-        @usort($sorted, @function(&$a, &$b) {
+        @usort($sorted, @function($a, $b) {
             if($a->name == $b->name) {
-                if($a->kill_me != true && $b->kill_me != true) {
+                if(property_exists($a, "kill_me") != true && property_exists($b, "kill_me") != true) {
                     //resolve overlaps
                     if(max($a->s, $b->s) <= min($a->e, $b->e)) {
                         $a->s = min($a->s, $b->s); 
                         $a->e = max($a->e, $b->e);
                         $b->kill_me = true;
-                        if($b->uuid != null) $a->uuid = $b->uuid;
+                        if(property_exists($b, "uuid") && $b->uuid != null) 
+                            $a->uuid = $b->uuid;
                     }
                 }
             }
@@ -424,7 +425,7 @@ function convert_to_dual_form($block, &$soFar) {
         });
     
         foreach($sorted as $mentionObj) {
-            if(@isset($mentionObj->kill_me) && $mentionObj->kill_me == true) 
+            if(isset($mentionObj->kill_me) && $mentionObj->kill_me == true) 
                 continue;       
             $soff = ($mentionObj->s + ($stopRemove + $stopAdded));
             $soff2 = ($mentionObj->s-1) + ($stopRemove + $stopAdded);
@@ -520,7 +521,7 @@ function pruneSubPostToJSONB($post, &$db_post_obj) {
                     $item->il = $block->indent_level;
                 }
                 if (isset($block->formatting)) {
-                    $item->frmt = setPrunedFormatting($block, $db_media);
+                    $item->frmt = setPrunedFormatting($block);
                     if(count($db_post_obj->deactivation_hints) > 0) {
                         foreach($item->frmt as &$f) {
                             if($f->t == 'ment') {
