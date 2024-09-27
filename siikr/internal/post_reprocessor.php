@@ -195,10 +195,10 @@ function extract_db_content_from_siikr_post(&$post, $db_media_map) {
     if(property_exists($post->blocks, "trail")) {
         $soFar["trail_users"] =[];
         foreach ($post->blocks->trail as &$trail_item) {
-            if(@$trail_item?->blog?->name != null) {
+            if(property_exists($trail_item, "blog") && property_exists($trail_item->blog, "name")) {
                 $soFar["trail_users"][$trail_item->blog->name] = true;
                 addHintCandidate($trail_item->blog->name, $deactivationHints);
-            } else if (@$trail_item?->by != null) {
+            } else if (property_exists($trail_item, "by")) {
                 $soFar["trail_users"][$trail_item->by] = true;
                 addHintCandidate($trail_item->by, $deactivationHints);
             } else {

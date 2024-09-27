@@ -43,11 +43,11 @@ function beginSearch($db) {
     global $username; 
     global $raw_query;
     global $search_params;
-    
+    global $node_in_maintenance_mode;    
     global $sort_mode;
     global $supplied_info;
     
-    $is_insurance_check = $_GET["isInsuranceCheck"];
+    $is_insurance_check = isset($_GET["isInsuranceCheck"]) ? $_GET["isInsuranceCheck"] : false;
     
     //$parsed = parseParams($search_params)
     $parser = new Parser('simple'); //fancy new abstract syntax tree parse
@@ -57,7 +57,7 @@ function beginSearch($db) {
         $response = call_tumblr($username, "info", [], true);
         try {
             if($supplied_info == null) {
-                $error_string = handleError($response);
+                handleError($response);
                 $blog_info = $response->response->blog;
             } else {
                 $blog_info = $supplied_info;
@@ -84,7 +84,7 @@ function beginSearch($db) {
                 /* clientside script checks for missed results on completion, 
                 but this makes me paranoid about infinite loops if I put the wrong FINISHEDINDEXING event, and anyway it's more efficient just to skip so...*/
                 $predir = __DIR__;
-                $exec_string = "php ".__DIR__."/internal/archive.php ". $blog_info->search_id. " ". $search_id_info->server;
+                $exec_string = "php ".__DIR__."/internal/archive.php ". $blog_info->search_id. " ". $_SERVER["HTTP_HOST"];
                 $no_index = $search_only || $index_disabled || $node_in_maintenance_mode;
                 if(!$no_index) exec("$exec_string  > /dev/null &");
                 else if($index_disabled) {

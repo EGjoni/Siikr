@@ -60,6 +60,7 @@ function build_nodestate_obj($db) {
             $est_calls_remaining = 0;
         }
     }
+    
     $result["estimated_calls_remaining"] = (int)($est_calls_remaining - ($pending_posts/50));
     return $result;
 }
@@ -67,7 +68,7 @@ function build_nodestate_obj($db) {
 function build_blogstat_obj($db, $blog_uuid) {
     global $n_stmts;
     maybe_build_n_stmts($db);
-    $result = [];
+    $result = ["blogstat_info" => null, "need_help" => false];
     if($blog_uuid != null) {
         try {
             $get_blogstats = $n_stmts["get_blogcheck_stats"];

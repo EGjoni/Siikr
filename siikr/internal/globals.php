@@ -12,9 +12,9 @@ function ensure_valid_string($string) {
 
 /**
  * return a utf8 substring at the given position of the givne length 
- * @param haystack
- * @param position
- * @param length
+ * @param string haystack
+ * @param int position
+ * @param int length
 **/
 function usub($str, $start, $length) {
     return mb_substr($str, $start, $length, 'UTF-8'); 
@@ -28,8 +28,8 @@ function usubstr_replace($original, $replacement, $position, $length) {
 
 /**
  * returns the utf8 character at the given position 
- * @param haystack
- * @param position
+ * @param string haystack
+ * @param string position
 */
 function uc($str, $pos) {
     return mb_substr($str, $pos, 1, 'UTF-8');
@@ -43,7 +43,7 @@ class SPDOStatement extends PDOStatement {
     public $execution_time = null;
     protected function __construct($dbh) {$this->dbh = $dbh;}
     /**
-     * @param delta if true, sets a value on this prepared statement storing how long its last execution took to complete
+     * @param array delta if true, sets a value on this prepared statement storing how long its last execution took to complete
      */
     public function exec($params, $deltas=false) {
         $qtime = null;
@@ -174,7 +174,7 @@ function log_api_call($status_code, $est_reavailable) {
     $query = "INSERT INTO public.self_api_hist (req_time, response_code, est_reavailable) VALUES (NOW(), $status_code, $est_reavailable);
     REFRESH MATERIALIZED VIEW public.self_api_summary;";
     while($r = pg_get_result($dbconn)) {
-        $r = $r;
+        $go = true;
     }
     while(pg_connection_busy($dbconn)) {
         usleep(1000);
@@ -182,6 +182,7 @@ function log_api_call($status_code, $est_reavailable) {
     
     pg_send_query($dbconn, $query);
 }
+
 
 
 function async_call_tumblr($blog_name_or_uuid, $request_type, $params=[], $with_meta = false, $asString = false) {
@@ -194,17 +195,32 @@ function async_call_tumblr($blog_name_or_uuid, $request_type, $params=[], $with_
             $mh = curl_multi_init();  
             $ch = curl_init($url); 
 
+            // To store headers
+            $headers = [];
+
+            // Function to capture headers
+            curl_setopt($ch, CURLOPT_HEADERFUNCTION, function($curl, $header) use (&$headers) {
+                $len = strlen($header);
+                $header = explode(':', $header, 2);
+                if (count($header) < 2) // ignore invalid headers
+                    return $len;
+
+                $headers[trim($header[0])] = trim($header[1]);
+
+                return $len;
+            });
+
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
             curl_multi_add_handle($mh, $ch);
             
             $count = 5;
             do {
                 $status = curl_multi_exec($mh, $active);
-                if($active) {
+                if ($active) {
                     $select = curl_multi_select($mh, 0);
                     if ($select === 0) {
-                        $count --;
-                        if($count == 0) {
+                        $count--;
+                        if ($count == 0) {
                             $count = 5;
                             Fiber::suspend();
                         }
@@ -221,27 +237,35 @@ function async_call_tumblr($blog_name_or_uuid, $request_type, $params=[], $with_
             curl_multi_remove_handle($mh, $ch);
             curl_multi_close($mh);
 
-            $detected_encoding = mb_detect_encoding('UTF-8', $possible_encodings);
+            $detected_encoding = mb_detect_encoding($response_s, $possible_encodings);
             $response_j = mb_convert_encoding($response_s, 'UTF-8', $detected_encoding);
             $response = json_decode($response_j);
             $status_code = 200;
+
             if (json_last_error() !== JSON_ERROR_NONE) {
                 $response = (object)[];
-                //sometimes tumblr responds with a proper json object, other times with a redirect, and there's no way of know when it will do which
-                $response->meta = parseHeadersToObj($http_response_header);
+                // Sometimes Tumblr responds with a proper json object, other times with a redirect, and there's no way of knowing when
+                $response->meta = parseHeadersToObj($headers); // Use captured headers
             }
-            $status_code = $response->meta->status;
+
+            // Check for status in headers if it's not in the response JSON
+            if (isset($headers['Status'])) {
+                $status_code = (int) $headers['Status'];
+            } else {
+                $status_code = $response->meta->status ?? 200;
+            }
+
             $est_reavailable = -1;
-            if($status_code == 429) {
-                $http_response_header = $http_response_header ?? [];
-                $est_reavailable = determine_reavailability($http_response_header);
+            if ($status_code == 429) {
+                $est_reavailable = determine_reavailability($headers);
             }
             
             log_api_call($status_code, $est_reavailable);
-            if($asString) {
+
+            if ($asString) {
                 return $response_j;
             }
-            if($with_meta) {
+            if ($with_meta) {
                 return $response;
             }
             
@@ -250,6 +274,7 @@ function async_call_tumblr($blog_name_or_uuid, $request_type, $params=[], $with_
     );
     return $result_fiber;
 }
+
 
 
 function call_tumblr($blog_name_or_uuid, $request_type, $params=[], $with_meta = false, $asString = false) {
@@ -363,13 +388,13 @@ function extractStatus($header) {
     } else return null;
 }
 
-function execAllSearches($db, $search_array, $match_condition, $exec_params) {
+function execAllSearches($db, $search_array, $match_condition, $exec_params, $notify_only) {
     $multiResults = []; 
     foreach($search_array as $search_item) { 
         $search_query = $search_item->query_text;
         $search_params = $search_item->query_params;
         $blog_uuid = $search_item->blog_uuid;
-        $results = execSearch($db, $search_query, $search_params, $match_condition, $exec_params); 
+        $results = $notify_only ? [] : execSearch($db, $search_query, $search_params, $match_condition, $exec_params); 
         $multiResults[] = (object)[
             "search_query" => $search_query, 
             "search_params" => $search_params,
@@ -679,7 +704,7 @@ class Parser {
 
 
 /**
- * @return obj a blogInfo object containing the resolved blog_uuid and name. This should be checked against the one tumblr purported before calling this function
+ * @return object a blogInfo object containing the resolved blog_uuid and name. This should be checked against the one tumblr purported before calling this function
  * so that the appropriate action or notification be issued clientside
 * Handles the following cases: 
 * 1. the blog_name does not exist in my table, nor does the blog_uuid.

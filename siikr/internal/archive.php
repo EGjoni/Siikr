@@ -4,7 +4,6 @@ require_once 'disk_stats.php';
 require_once 'post_processor.php';
 //echo phpversion();
 $archiver_uuid = uuid_create_v4();
-$userInfo = posix_getpwuid(posix_geteuid());
 $db = new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
 $media_table = 'media';
 
@@ -393,7 +392,7 @@ try {
         $oldest_post_in_batch = null;
         $before_info = array_pop($gap_queue);
         $before_time = $before_info == null? null:$before_info->timestamp;
-        $before_id = $before_info->id;
+        $before_id = $before_info == null? null : $before_info->id;
         do {
             $isUpgrade = false; //gets set to true for notifications downstream
             $disk_use = get_disk_stats();        
@@ -836,4 +835,4 @@ function queueEventToAll($searches_array, $event_str, $message) {
  *      S_a, and S_b. Both are necessary, you should use them, and furthermore if you are modifying siikr to better support a non-english language, you should make sure to replace the stopword with something that is a stopword in whatever dictionary your language uses 
  * ]
  **/
-?>
+

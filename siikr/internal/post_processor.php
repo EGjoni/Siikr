@@ -520,7 +520,7 @@ function pruneSubPostToJSONB($post, &$db_post_obj) {
                     $item->il = $block->indent_level;
                 }
                 if (isset($block->formatting)) {
-                    $item->frmt = setPrunedFormatting($block, $db_media);
+                    $item->frmt = setPrunedFormatting($block);
                     if(count($db_post_obj->deactivation_hints) > 0) {
                         foreach($item->frmt as &$f) {
                             if($f->t == 'ment') {
