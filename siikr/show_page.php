@@ -1,5 +1,5 @@
 <?php
-$scriptVer = 84;
+$scriptVer = 86;
 require_once 'internal/disk_stats.php';
 try {
 	$diskpath = $db_disk;   
@@ -245,6 +245,11 @@ try {
     }
 
     function setNodeHints() {
+        let bars = document.querySelectorAll(".disk-use-bar");
+        bars.foreach(b => {
+            b.classList.remove("is_archiving");
+            b.classList.remove("was_search_provider");
+        });
         let archivingNode = nodesByURL['https://'+document.archiving_server_url];
         let searchingNode = nodesByURL['https://'+document.searched_server_url];
         archivingNode?.diskUseBar.classList.add("is_archiving");

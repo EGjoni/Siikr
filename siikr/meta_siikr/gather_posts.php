@@ -18,12 +18,13 @@ require_once './../internal/globals.php';
  */
 
 $db = getDb();//new SPDO("pgsql:dbname=$db_name", $db_user, $db_pass);
-$args = ["blog_uuid" => $blog_uuid, "index_version" => $_GET["version"]];
-$before_requested = $_GET["before"];
-$after_requested = $_GET["after"];
+$blog_uuid = isset($_GET["blog_uuid"]) ? $_GET["blog_uuid"] : null;
+$before_requested = isset($_GET["before"]) ? $_GET["before"] : null ;
+$after_requested = isset($_GET["after"]) ? $_GET["after"] : null;
 $index_version_requested = isset($_GET["version"]) ? $_GET["version"] : $archiver_version;
-$blog_uuid = $_GET["blog_uuid"];
-$requested_by = 'https://'.normalizeURL($_GET["requested_by"]);
+$normalized_url = normalizeURL($_GET["requested_by"]);
+$normalized_url = explode(":", $normalized_url)[0];
+$requested_by = 'https://'.$normalized_url;
 
 $limit = isset($_GET["limit"]) ? $_GET["limit"] : 200;
 

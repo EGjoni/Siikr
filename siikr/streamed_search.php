@@ -30,7 +30,7 @@ if($limit == null) $limit = $MAX_LIMIT;
 
 $meta_search_params = [
     "search_only" => isset($_GET["search_only"]) && $_GET["search_only"] == true,
-    "listen_to" => isset($_GET["listen_to"]) ? $_GET["listen_to"] : $_SERVER["HTTP_HOST"],
+    "listen_to" => isset($_GET["listen_to"]) ? $_GET["listen_to"] : $_SERVER["SERVER_NAME"],
     "archive_only" => isset($_GET["archive_only"]) && $_GET["archive_only"]
 ];
 $search_params_arr = [];
@@ -89,7 +89,7 @@ function beginSearch($db) {
                 /* clientside script checks for missed results on completion, 
                 but this makes me paranoid about infinite loops if I put the wrong FINISHEDINDEXING event, and anyway it's more efficient just to skip so...*/
                 $predir = __DIR__;
-                $exec_string = "php ".__DIR__."/internal/archive.php ". $blog_info->search_id. " ". $_SERVER["HTTP_HOST"];
+                $exec_string = "php ".__DIR__."/internal/archive.php ". $blog_info->search_id. " ". $_SERVER["SERVER_NAME"];
                 $no_index = $search_only || $index_disabled || $node_in_maintenance_mode;
                 if(!$no_index) exec("$exec_string  > /dev/null &");
                 else if($index_disabled) {
@@ -97,7 +97,7 @@ function beginSearch($db) {
                 }
             }
             
-            $search_id_info->searched_server_url = $_SERVER["HTTP_HOST"];
+            $search_id_info->searched_server_url = $_SERVER["SERVER_NAME"];
             if(!$search_only)
                 $search_id_info->search_id = $blog_info->search_id;
             $search_id_info->valid = true;
@@ -171,7 +171,7 @@ function sendByStreamedSet($db, $blog_info, $search_query) {
 }
 
 function encodeAndFlush($obj) {
-    $obj->content_provider = $_SERVER["HTTP_HOST"];
+    $obj->content_provider = $_SERVER["SERVER_NAME"];
     echo json_encode($obj);
     echo "\n#end_of_object#\n";
     ob_flush();      

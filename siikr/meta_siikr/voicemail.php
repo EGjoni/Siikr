@@ -8,7 +8,10 @@ require_once 'meta_internal/node_management.php';
 
 
 $blog_uuid = $_GET["blog_uuid"];
-$node_url = 'https://'.normalizeURL($_GET["caller"]);
+$normalized_node_url = normalizeURL($_GET["caller"]);
+$normalized_node_url = explode(":", $normalized_node_url)[0];
+$node_url = 'https://'.$normalized_node_url;
+
 $node_obj = $db->prepare("SELECT * FROM siikr_nodes WHERE node_url = :node_url")
                 ->exec(["node_url"=>$node_url])->fetch(PDO::FETCH_OBJ);
 

@@ -435,9 +435,9 @@ function forwardRequest($params, $endpoint, $node, $payload = null, $streaming =
         ob_implicit_flush(true);
         curl_setopt($ch, CURLOPT_WRITEFUNCTION, function($curl, $data) {
             echo $data;
-            //ob_flush();      
+            ob_flush();      
             flush();
-            //ob_clean();
+            ob_clean();
             return strlen($data);
         });
         if($payload != null) {

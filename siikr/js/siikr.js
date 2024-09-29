@@ -256,8 +256,8 @@ async function processMoreResults(obj) {
 
 async function resetProgressListeners(obj) {
 	search_id = obj.search_id == null ? search_id : obj.search_id; 
-	document.searched_server_url = obj.searched_server_url;
-	document.archiving_server_url = obj.archiving_server_url;
+	document.searched_server_url = obj.searched_server_url.split(":")[0];
+	document.archiving_server_url = obj.archiving_server_url.split(":")[0];
 	blogInfo = {
 		search_id : search_id,
 		blog_uuid: obj.blog_uuid,
