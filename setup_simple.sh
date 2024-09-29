@@ -240,6 +240,7 @@ set_server_conf_file() {
 \$language = '$language';
 \$am_unlimited = $am_unlimited;
 \$hub_url = "$meta_host";
+\$node_name = "$node_name";
 EOF
 }
 

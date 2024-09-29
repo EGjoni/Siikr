@@ -8,6 +8,8 @@ document_root="/var/www/" #location you want to install siikr into
 #the following line is primarily used to setup the nginx site and register ssl certificates.
 siikr_domain="YOUR SIIKR DOMAIN GOES HERE" #for example, if you intend to host siikr on siikr.geodudecities.com, then you would enter 'siikr.geodudecities.com'
 #you may contact antinegationism or post a thread on the github if you don't have a domain for your siikr node, and one can be provided for your the ip address of your server.
+node_name="WHAT YOU WANT TO NAME YOUR NODE HERE" #This will be displayed to the user on the siik hub page. It can have as much html in it as you can fit into 64 characters. Use responsibly, or, failing that, impressively.
+
 
 content_text_config="en_us_hun_simple" #the name of the postgres language text config you intend to use. Make sure to actually CREATE the config though.
 language="en" #a two character iso-639 language code indicating the language this node is dedicated to. Eventually, if a hub can correctly determine the language of a blog, it will avoid routing blogs to nodes of the wrong language

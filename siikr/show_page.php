@@ -1,11 +1,11 @@
 <?php
-$scriptVer = 82;
+$scriptVer = 83;
 require_once 'internal/disk_stats.php';
 try {
 	$diskpath = $db_disk;   
     
-    $total_diskspace = get_allocated_space()/(1024*1024); 
-    $free_space = disk_free_space($db_disk)/(1024*1024);
+    $total_diskspace = get_allocated_space()/(1000*1000); 
+    $free_space = disk_free_space($db_disk)/(1000*1000);
     $used_percent = get_used_percent();
 	$used_percent = round($used_percent, 2);
 
@@ -259,7 +259,7 @@ try {
             freeTotal += n.free_space_mb;           
         });
 
-        usedPercent = parseInt(100*(1-(node.free_space_mb/freeTotal)));
+        usedPercent = parseInt(100*(1-(node.free_space_mb/node.total_space_mb)));
         let diskuseelem = bar;//document.getElementById("disk-use");
         let diskString = node.node_name == "" ? "Node: "+node.node_id : node.node_name;//parseInt(usedPercent)+"% of diskspace used";
         let lightText = bar.querySelector(".texted-light");
@@ -338,7 +338,7 @@ try {
             free_space_mb: myFree, 
             node_id: 0, 
             node_name: "Local", 
-            node_url: window.location.host}];
+            node_url: 'https://'+window.location.host}];
     }
     initDiskUseBars(node_list);
     

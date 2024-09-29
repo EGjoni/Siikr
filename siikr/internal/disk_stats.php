@@ -2,16 +2,16 @@
 require_once 'disks.php';
 
 function get_used_percent() {
-    global $db_disk, $db_disk_min_headroom;
-    $total_diskspace = disk_total_space($db_disk) - $db_disk_min_headroom;
+    global $db_disk, $db_min_disk_headroom;
+    $total_diskspace = disk_total_space($db_disk) - $db_min_disk_headroom;
     $free_space = disk_free_space($db_disk);
     $used_percent = (1 -($free_space/$total_diskspace))*100;
     return $used_percent;
   }
 
   function get_allocated_space() {
-    global $db_disk, $db_disk_min_headroom;
-    return disk_total_space($db_disk) - $db_disk_min_headroom;
+    global $db_disk, $db_min_disk_headroom;
+    return disk_total_space($db_disk) - $db_min_disk_headroom;
   }
 
   function sizeToBytes($size) {
@@ -25,5 +25,5 @@ function get_used_percent() {
         throw new InvalidArgumentException("Invalid size unit: $unit");
     }
 
-    return $value * pow(1024, $exponent);
+    return $value * pow(1000, $exponent);
 }

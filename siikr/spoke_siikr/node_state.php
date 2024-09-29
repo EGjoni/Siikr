@@ -17,12 +17,13 @@ function maybe_build_n_stmts($db) {
 }
 
 function build_nodestate_obj($db) {
+    global $db_disk;
     global $am_unlimited, $language, $deletion_rate, $n_stmts;
     global $node_name, $node_flare, $node_notice;
     global $node_in_maintenance_mode; //may be defined in auth/config, 
     //if true, will signal to the hub that this node should not be relied upon for searches
     //unset or set to false again in auth/config when you have finished maintenance.
-    $free_space_mb = capped_freespace($db) / (1000*1000);
+    $free_space_mb = disk_free_space($db_disk) / (1000*1000);
     $estimated_remaining_post_capacity = estimatePostIngestLimit($db, $free_space_mb);
     $result = [
         "have_blog" => false,
@@ -51,7 +52,7 @@ function build_nodestate_obj($db) {
 
     $result["time_right_now"] = $last_stat_obj->req_time;
     $result["spoke_language"] = $language;
-    $result["total_space_mb"] = get_allocated_space()/(1024*1024);
+    $result["total_space_mb"] = get_allocated_space()/(1000*1000);
     $result["node_name"] = $node_name;
     $result["node_flare"] = $node_flare;
     $result["node_notice"] = $node_notice;
