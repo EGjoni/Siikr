@@ -23,8 +23,8 @@ This walks you through setting up a Siikr hub/spoke node on an Ubuntu system.
 
 * **Ubuntu Server:** This guide assumes you're using an Ubuntu server (tested on 20.04 and 22.04).
 * **Root or Sudo Access:** You'll need root or sudo privileges to install packages and configure services.\
-* **Domain Name:**  You'll need a domain name or a static IP address for your server.
-* **SSL certificate:** The unstall script can optionally set one up for you, but basically Tumblr refuses to give you an API key if you don't have https:// domain name so, ssl.
+* **Domain Name:**  You'll need a domain name for your server.
+* **SSL certificate:** The install script can optionally set one up for you, but basically Tumblr refuses to give you an API key if you don't have https:// domain name so, ssl.
 * **Tumblr API Key:** Obtain a Tumblr API key by registering an application at [https://www.tumblr.com/oauth/apps](https://www.tumblr.com/oauth/apps).
 
 
