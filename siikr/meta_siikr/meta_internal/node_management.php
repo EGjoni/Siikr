@@ -147,7 +147,10 @@ function multiCall($urls, $notify_response_update, &$all_responses) {
     curl_multi_close($mh); // Close handles
 }
 
-
+/**
+ * As an aspirational sketch, the ideal weighting mechanism (which this isn't, but should work toward) looks like this:
+ * 1. determine the probability that the next blog searched for is one that only resides on nodes which don't
+ */
 
 
 
@@ -155,7 +158,7 @@ function multiCall($urls, $notify_response_update, &$all_responses) {
  * Secretly judges their responses to determine if any are truly worthy.
  * Returns the chosen one.
 */
-function askAllNodes($blog_uuid, $blog_info=null) {
+function askAllNodes($blog_uuid, $blog_info=null, $hosts_queried=[], $non_hosts_queried=[], $available_nodes=[]) {
     global $all_nodes;
     $url_list = []; 
     $nodes_by_url = [];
@@ -167,11 +170,11 @@ function askAllNodes($blog_uuid, $blog_info=null) {
     $url_list = array_keys($nodes_by_url);
     $all_responses = [];
     $nodes_by_id = [];
-    $hosting_nodes = []; // contains nodes that purport to host the blog
-    $available_nodes = []; // contains nodes that appear to be alive
+    //$hosting_nodes = []; // contains nodes that purport to host the blog
+    //$available_nodes = []; // contains nodes that appear to be alive
     
 
-    $processNodeResponse = function($new_results) use (&$nodes_by_url, &$available_nodes, &$hosting_nodes, &$blog_info, &$blog_uuid) {
+    $processNodeResponse = function($new_results) use (&$nodes_by_url, &$hosts_queried, &$non_hosts_queried, &$available_nodes, &$blog_info, &$blog_uuid) {
         foreach($new_results as $result) {
             $node = $nodes_by_url[$result["url"]];
             $json_result = json_decode($result["response"], true);
@@ -185,13 +188,16 @@ function askAllNodes($blog_uuid, $blog_info=null) {
             foreach($json_result as $k => $v) if($k != "blogstat_info") $node->$k = $v;
             updateNodeStats($node);
             if($json_result["have_blog"] && isset($json_result["blogstat_info"])) {
+                $hosts_queried[] = $node;
                 foreach($json_result["blogstat_info"] as $k => $v) {
                     $node->$k = $v;
                 }
                 if(property_exists($blog_info, "blog_uuid") && $blog_info->blog_uuid != null) {
                     registerToBlogNodeMap($blog_info->blog_uuid, $node);
-                    $hosting_nodes[] = $node;
+                    $hosts_queried[] = $node;
                 }
+            } else {
+                $non_hosts_queried[] = $node;
             }
         }
     };
@@ -203,8 +209,8 @@ function askAllNodes($blog_uuid, $blog_info=null) {
             $an->indexed_post_count = 0;
         }
     } 
-    /*if(count($hosting_nodes) > 0) {
-        $bestNode = tieBreaker($hosting_nodes, $blog_uuid, $blog_info);
+    /*if(count($hosts_queried) > 0) {
+        $bestNode = tieBreaker($hosts_queried, $blog_uuid, $blog_info);
     }
     if($bestNode == null || $bestNode->indexed_post_count == 0) {*/
         $bestNode = tieBreaker($available_nodes, $blog_uuid, $blog_info);
@@ -283,16 +289,35 @@ $known_prep = $db->prepare(
     WHERE bnm.blog_uuid = :blog_uuid 
     AND bnm.node_id = sn.node_id");
 
-/**Checks to see if we know of a node that already has a bunch of posts archived from this blog. This is intended for a quick initial search. Afterward, a call should be made to 'findBestArchiverNode' to determine if the blog will need to be transferred over to a seperate node for archiving.
+
+/**
+ * @param string blog_uuid 
+ * @return object of arrays of nodes containing this blog. elements/values contains information about node's general state and blog index completion 
+ *      these are -> as_list (raw array)
+ *                -> by_id (Keyed by node_id), 
+ *                -> by_url (Keyed by node url)
+ */
+function getKnownHostsById($blog_uuid) {
+    $known_hosts = $known_prep->exec(["blog_uuid"=>$blog_uuid])->fetchAll(PDO::FETCH_OBJ);
+    $result = (object)["as_list"=>$known_hosts, "by_id"=>[], "by_url"=>[]];
+    if($known_hosts) {
+        foreach($known_hosts as $host) {
+            $result->by_id[$host->node_url] = $host; 
+        }
+    }
+}
+
+/**Checks to see if we know of a node that already has a bunch of posts archived from this blog. This is intended for a quick initial search over posts that have already been indexed. Afterward, a call should be made to 'findBestArchiverNode' to determine if the blog will need to be transferred over to a seperate node for archiving.
 * Attempts to return the best node for the job if we do returns null if no nodes no of the blog or none are viable
 */
-function findBestSearchNode($blog_uuid, $blog_info=null) {
+function findBestSearchNode($blog_uuid, $blog_info = null, $known_hosts_by_id = null) {
     global $checkinQueue;
     global $cached_prep;
     global $known_prep;
     global $deletion_rate;
               
-    $known_hosts = $known_prep->exec(["blog_uuid"=>$blog_uuid])->fetchAll(PDO::FETCH_OBJ);
+    if($known_hosts == null)
+        $known_hosts = $known_prep->exec(["blog_uuid"=>$blog_uuid])->fetchAll(PDO::FETCH_OBJ);
     $best_search_node = $known_hosts[0];
     if($best_search_node == false) $best_search_node = null;
     foreach($known_hosts as $host) {
@@ -302,10 +327,10 @@ function findBestSearchNode($blog_uuid, $blog_info=null) {
     return $best_search_node;
 }
 
-/**Checks to see if we know of a node that already has a bunch of posts archived from this blog. This is intended for a quick initial search. Afterward, a call should be made to 'findBestArchiverNode' to determine if the blog will need to be transferred over to a seperate node for archiving.
-* Attempts to return the best node for the job if we do returns null if no nodes no of the blog or none are viable
+/**Checks to see if the blog will need to be transferred over to a seperate node for archiving.
+* Attempts to return the best node for the job of archiving the rest of the blog.
 */
-function findBestArchivingNode($blog_uuid, $blog_info=null) {
+function findBestArchivingNode($blog_uuid, $blog_info=null, $known_hosts_init=null) {
     global $checkinQueue;
     global $cached_prep;
     global $known_prep;
@@ -315,8 +340,9 @@ function findBestArchivingNode($blog_uuid, $blog_info=null) {
     if($cached_node != false) {
         $cached_node->from_cache = true;
         return $cached_node;
-    } else {        
-        $known_hosts_init = $known_prep->exec(["blog_uuid"=>$blog_uuid])->fetchAll(PDO::FETCH_OBJ);
+    } else {
+        if($known_hosts_init == null)
+            $known_hosts_init = $known_prep->exec(["blog_uuid"=>$blog_uuid])->fetchAll(PDO::FETCH_OBJ);
         if($known_hosts_init) {
             $known_hosts = [];
             foreach($known_hosts_init as $host) {

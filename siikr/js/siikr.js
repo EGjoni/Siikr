@@ -219,6 +219,7 @@ async function processSeekResult(blogInfoIn, doAugmentFlip) {
 		
 		pending_attachment_count = 0;
 		updatePendingCountHint();
+		setNodeHints(blogInfoIn.hosted_by);
 		if(blogInfo.indexed_post_count == 0 || blogInfo.indexed_post_count == null) {
 			fadeStatusTextTo("Haven't seen that blog before. Give me a sec to retrieve it. (You should see progress updates in a few seconds. Feel free to refresh the page if you get impatient)");
 		} else {
@@ -256,49 +257,54 @@ async function processMoreResults(obj) {
 
 async function resetProgressListeners(obj) {
 	search_id = obj.search_id == null ? search_id : obj.search_id; 
-	document.searched_server_url = obj.searched_server_url.split(":")[0];
-	document.archiving_server_url = obj.archiving_server_url.split(":")[0];
+	if(obj.searched_server_url != null)
+		document.searched_server_url = obj.searched_server_url.split(":")[0];
+	if(obj.archiving_server_url != null)
+		document.archiving_server_url = obj.archiving_server_url.split(":")[0];
+
 	blogInfo = {
 		search_id : search_id,
 		blog_uuid: obj.blog_uuid,
 		blog_name: obj.blog_name
 	};
 
-	setNodeHints();
-	progressListener.removeListener("indexbegin");
-	progressListener.removeListener("indexconclude");
-	progressListener.removeListener("indexpostupdate");
-	progressListener.removeListener("indextagupdate");
-	noticeListener.removeListener("noticelistener");
-	noticeListener.removeListener("errorlistener");
-	reinitPseudoSocket('https://'+obj.archiving_server_url+"/routing/serverEvents.php");		
-	
-	progressListener.setListener("indexbegin",
-		"INDEXNG!"+search_id, {},
-		()=>{
-			console.log("ARCHIVER STARTED");
+	setNodeHints(obj.hosted_by);
+	if(obj.archiving_server_url != null) {
+		progressListener.removeListener("indexbegin");
+		progressListener.removeListener("indexconclude");
+		progressListener.removeListener("indexpostupdate");
+		progressListener.removeListener("indextagupdate");
+		noticeListener.removeListener("noticelistener");
+		noticeListener.removeListener("errorlistener");
+		reinitPseudoSocket('https://'+document.archiving_server_url+"/routing/serverEvents.php");		
+		
+		progressListener.setListener("indexbegin",
+			"INDEXNG!"+search_id, {},
+			()=>{
+				console.log("ARCHIVER STARTED");
+			}
+		);
+		progressListener.setListener("indexconclude",
+			"FINISHEDINDEXING!"+search_id,{},
+			concludeIndexState
+		);
+		progressListener.setListener("indexpostupdate", 
+			"INDEXEDPOST!"+search_id, {},
+			updateIndexState
+		);
+		progressListener.setListener("indextagupdate", 
+			"INDEXEDTAG!"+search_id, {},
+			updateAvailableTags
+		);
+		noticeListener.setListener("noticelistener", 
+			"NOTICE!"+search_id, {}, 
+			updateNoticeText);
+		noticeListener.setListener("errorlistener", 
+			"ERROR!"+search_id, {}, updateErrorText);
+		
+		if(obj.display_error != null) {
+			fadeStatusTextTo(obj.display_error);
 		}
-	);
-	progressListener.setListener("indexconclude",
-		"FINISHEDINDEXING!"+search_id,{},
-		concludeIndexState
-	);
-	progressListener.setListener("indexpostupdate", 
-		"INDEXEDPOST!"+search_id, {},
-		updateIndexState
-	);
-	progressListener.setListener("indextagupdate", 
-		"INDEXEDTAG!"+search_id, {},
-		updateAvailableTags
-	);
-	noticeListener.setListener("noticelistener", 
-		"NOTICE!"+search_id, {}, 
-		updateNoticeText);
-	noticeListener.setListener("errorlistener", 
-		"ERROR!"+search_id, {}, updateErrorText);
-	
-	if(obj.display_error != null) {
-		fadeStatusTextTo(obj.display_error);
 	}
 }
 

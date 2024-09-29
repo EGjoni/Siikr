@@ -1,5 +1,5 @@
 <?php
-$scriptVer = 86;
+$scriptVer = 90;
 require_once 'internal/disk_stats.php';
 try {
 	$diskpath = $db_disk;   
@@ -103,7 +103,7 @@ try {
     <button onclick="document.getElementById('imageDialog').close();">Close</button>
 </dialog>
 <div id="templates" style="display:none;">
-    <div class="disk-use-bar">
+    <div class="disk-use-bar tooltip-container">
         <div class="total-disk">
             <div class="used-disk">
                 <div class="texted-light"> %disk used</div>
@@ -112,6 +112,17 @@ try {
             <!--<div id="free-disk">
 
             </div>-->
+        </div>
+        <div class="inidicator-icon">
+        </div>
+        <div class="tooltip">
+            <div class="tip-line"><h3 class="tip-node-name"></h3></div>
+            <div class="tip-line"><b>In Maintenance Mode: </b><span class="tip-maintenance-mode"></span></div>
+            <div class="tip-line"><b>Indexed Posts: </b><span class="tip-indexed-post-count"></span></div>
+            <div class="tip-line"><b>Used Diskspace: </b><span class="tip-disk-used"></span></div>
+            <div class="tip-line"><b>Total Diskspace: </b><span class="tip-disk-total"></span></div>
+            <div class="tip-line"><b>~API calls remaining: </b><span class="tip-calls-remaining"></span></div>
+            <div class="tip-line"><b>~Reliability rating: </b><span class="tip-reliability"></span></div>
         </div>
     </div>
      <div class = "row"></div>
@@ -232,6 +243,7 @@ try {
             n.free_space_mb = parseInt(n.free_space_mb);
             nodesByURL[n.node_url] = n;
             if(n.diskUseBar == null) {
+                n.isHost = false;
                 n.diskUseBar = diskUseBase.cloneNode(true);
                 diskUseContainer.appendChild(n.diskUseBar);
                 n.diskUseBar.forNode = n;
@@ -244,11 +256,39 @@ try {
         });
     }
 
-    function setNodeHints() {
+    function setNodeHints(hosting_nodes = []) {
         let bars = document.querySelectorAll(".disk-use-bar");
-        bars.foreach(b => {
-            b.classList.remove("is_archiving");
-            b.classList.remove("was_search_provider");
+        let nodes_by_id = {};
+        bars.forEach(b => {
+            if(b.forNode != null) {
+                b.classList.remove("is_archiving");
+                b.classList.remove("was_search_provider");
+                b.forNode.isHost=false;
+                b.classList.remove("is-host");
+                nodes_by_id[b.forNode.node_id] = b.forNode;
+            }
+        });
+
+        node_list.forEach(n=> {
+            try{
+                    n.diskUseBar.querySelector(".tip-node-name").innerHTML = n.node_name == "" || n.node_name == null ? "Node "+n.node_id : n.node_name;
+                    n.diskUseBar.querySelector(".tip-disk-used").innerText = ((n.total_space_mb - n.free_space_mb)/1000).toFixed(2)+' GB';
+                    n.diskUseBar.querySelector(".tip-disk-total").innerText = (n.total_space_mb/1000).toFixed(2) +' GB';
+            } catch (e) {}
+        }) 
+
+        hosting_nodes.forEach(n => {
+            let diskBar = nodes_by_id[n.node_id].diskUseBar;
+            diskBar.forNode.isHost = true;
+            diskBar.classList.add("is-host");
+            try{
+                diskBar.querySelector(".tip-calls-remaining").innerText = ''+n.estimated_calls_remaining;
+                diskBar.querySelector(".tip-maintenance-mode").innerText = ''+(n.down_for_maintenance);
+                diskBar.querySelector(".tip-indexed-post-count").innerText = ''+n.indexed_post_count;
+                diskBar.querySelector(".tip-disk-used").innerText = ((n.total_space_mb - n.free_space_mb)/1000).toFixed(2)+' GB';
+                diskBar.querySelector(".tip-disk-total").innerText = (n.total_space_mb/1000).toFixed(2) +' GB';
+                diskBar.querySelector(".tip-reliability").innerText = n.reliability;
+            } catch(e) {}
         });
         let archivingNode = nodesByURL['https://'+document.archiving_server_url];
         let searchingNode = nodesByURL['https://'+document.searched_server_url];
@@ -266,7 +306,7 @@ try {
 
         usedPercent = parseInt(100*(1-(node.free_space_mb/node.total_space_mb)));
         let diskuseelem = bar;//document.getElementById("disk-use");
-        let diskString = node.node_name == "" ? "Node: "+node.node_id : node.node_name;//parseInt(usedPercent)+"% of diskspace used";
+        let diskString = node.node_name == "" || node.node_name == null ? "Node: "+node.node_id : node.node_name;//parseInt(usedPercent)+"% of diskspace used";
         let lightText = bar.querySelector(".texted-light");
         let darkText = bar.querySelector(".texted-dark");
         if(usedPercent > 97) {
@@ -285,15 +325,15 @@ try {
         }
         else if(usedPercent > 90) {
             diskuseelem.style.width = 'auto';
-            diskString = node.node_name ??"<b>"+diskString+" Status:</b> Getting kinda low.";
+            diskString = "<b>"+diskString+" Status:</b> Getting kinda low.";
         }
         if(usedPercent <= 80) {
             diskuseelem.style.width = 'auto';
-            diskString = node.node_name ??"<b>"+diskString+" Status:</b> Everything's fine."
+            diskString = "<b>"+diskString+" Status:</b> Everything's fine."
         }
 
-        lightText.innerHTML = diskString;
-        darkText.innerHTML = diskString;//parseInt(usedPercent)+"% of diskspace used";
+        lightText.innerHTML = "<span>"+diskString+"</span>";
+        darkText.innerHTML = "<span>"+diskString+"</span>";//parseInt(usedPercent)+"% of diskspace used";
 
         var diskhue = (125-(usedPercent*1.25));
         var x= (usedPercent-70)/30;

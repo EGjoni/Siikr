@@ -1592,7 +1592,7 @@ a.name-container {
   /* width: 200px; */
   height: 1.5em;
   /* filter: invert(1); */
-  width: 99%;
+  width: 225px;
   font-size: 0.85em;
   height: 100%;
   align-items: center;
@@ -1603,8 +1603,9 @@ a.name-container {
   /*font-weight: bold;*/
   grid-column: 1;
 }
+
 .texted-light {
-  width: 200px;
+  width: 225px;
   height: 1.5em;
   font-size: 0.85em;
   height: 100%;
@@ -1661,36 +1662,6 @@ box-shadow: 1px -4px 13px 0px #c3c3c3e6 inset, 5px 2px 7px 1px #000000e6 inset;
   filter: drop-shadow(-2px 0px 8px black);
 }
 
-.texted-dark {
-  /* color: currentColor; */
-  /* width: 200px; */
-  height: 1.5em;
-  /* filter: invert(1); */
-  width: 99%;
-  font-size: 0.85em;
-  height: 100%;
-  /* filter: invert(1); */
-  align-items: center;
-  display: flex;
-  justify-content: center;
-  text-align: center;
-  grid-row: 1;
-  /*font-weight: bold;*/
-  grid-column: 1;
-}
-.texted-light {
-  width: 200px;
-  height: 1.5em;
-  font-size: 0.85em;
-  height: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  /* margin: auto; */
-  /*font-weight: bold;*/
-  color: white;
-  filter: drop-shadow(1px 1px 2px #0009);
-}
 
 .disk-use {
     position: fixed;

@@ -17,9 +17,9 @@ $checkinQueue = [];
 $forward_params = $_GET;
 
 function initSearch($username, $forward_params) {
-    global $blog_info;
+    global $blog_info, $known_prep;
     $forward_search_params = $forward_params;
-    $forward_archive_params = (array)((object)$forward_search_params);
+    $forward___archive___params = (array)((object)$forward_search_params);
     try {        
         $response = call_tumblr($username, "info", [], true);
         try {
@@ -31,12 +31,18 @@ function initSearch($username, $forward_params) {
             throw $e;
         } 
         $blog_info->valid = true;
-        $searchNode = findBestSearchNode($blog_info->blog_uuid, $blog_info);
-        $archivingNode =  findBestArchivingNode($blog_info->blog_uuid, $blog_info);
+        $known_hosts = $known_prep->exec(["blog_uuid"=>$blog_info->blog_uuid])->fetchAll(PDO::FETCH_OBJ);
+        $blog_info->hosted_by = $known_hosts;
+        $searchNode = findBestSearchNode($blog_info->blog_uuid, $blog_info, $known_hosts);
+        $archivingNode =  findBestArchivingNode($blog_info->blog_uuid, $blog_info, $known_hosts);
         $ping_suggested = true;
         $new_archive = false;
+        $hosts_queried = [];
+        $non_hosts_queried = [];
+        $available_nodes = [];
         if($archivingNode == null) {
-            $archivingNode = askAllNodes($blog_info->blog_uuid, $blog_info);
+            $archivingNode = askAllNodes($blog_info->blog_uuid, $blog_info, 
+                                        $hosts_queried, $non_hosts_queried, $available_nodes);
             if($searchNode == null)
                 $searchNode = $archivingNode;
             $ping_suggested = false;
@@ -57,7 +63,9 @@ function initSearch($username, $forward_params) {
             }
             forwardRequest($forward_search_params, 'streamed_search.php', $searchNode, $blog_info);            
             if($ping_suggested) {//update blognode map
-                askAllNodes($blog_info->blog_uuid, $blog_info);
+                $hosts_queried=[]; $non_hosts_queried=[]; $available_nodes=[];
+                askAllNodes($blog_info->blog_uuid, $blog_info,
+                            $hosts_queried, $non_hosts_queried, $available_nodes);
             }
             //askAllNodes($blog_info->blog_uuid, $blog_info); //implicitly updates nodestats, doing it since we're here anyway
             cleanStaleCacheEntries();

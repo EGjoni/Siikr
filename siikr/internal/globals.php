@@ -384,7 +384,7 @@ function getTextSearchString($query, $search_params, $match_condition="p.blog_uu
     
     list($content_weight_string, $meta_weight_string, $stem_weight_string, $filter_string) = parseParams($search_params);
     //if(!$image_only)
-    return getPostSearchString($query, $match_condition, $content_weight_string, $meta_weight_string, $stem_weight_string, $filter_string);
+    return getPostSearchString($query, $content_weight_string, $meta_weight_string, $stem_weight_string, $filter_string, $match_condition);
     //else 
     //    return getImageSearchString($query, $match_condition);
 }
@@ -485,7 +485,7 @@ function parseParams($paramstring) {
 
 
 
-function getPostSearchString($query_text, $match_condition="p.blog_uuid = :q_uuid ", $content_weight_string, $meta_weight_string, $stem_weight_string, $filter_string) {
+function getPostSearchString($query_text, $content_weight_string, $meta_weight_string, $stem_weight_string, $filter_string, $match_condition="p.blog_uuid = :q_uuid ") {
     global $content_text_config;
     $query_text_hun = "websearch_to_tsquery('$content_text_config', '$query_text')";
     $query_text_meta = $query_text_hun;
