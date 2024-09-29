@@ -8,7 +8,7 @@ $injection_base = '';
 $injectable = '
 var subdir = "";
 var server_events_override_url = undefined;';
-if($_GET['lemmein']==true) {
+if(isset($_GET['lemmein']) && $_GET['lemmein']==true) {
     require_once "show_page.php";
 } else if($squid_game_warn == false && $squid_game == true) {
     require_once "maintenance.php";

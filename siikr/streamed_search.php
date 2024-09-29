@@ -13,8 +13,11 @@ if($supplied_info != null) {
     $supplied_info = json_decode($supplied_info);
 }
 $blog_info = null;
-$username = explode(".", $_GET["username"])[0];
-$raw_query = pg_escape_string($_GET["query"]."");
+$username = null;
+if(isset($_GET["username"]))
+    $username = explode(".", $_GET["username"])[0];
+if(isset($_GET["query"]))
+    $raw_query = pg_escape_string($_GET["query"]."");
 $search_params_assoc = sanitizeParams($_GET);
 $sort_mode_arg = $_GET["sortMode"];
 $sort_mode = ["score" => "ORDER BY score desc", 

@@ -16,7 +16,7 @@ $injection_base = 'meta_siikr/meta_';
 $injectable = "
 var subdir = 'meta_siikr/meta_';
 var node_list = $nodes_j;";
-if($_GET['lemmein']==true) {
+if(isset($_GET['lemmein']) && $_GET['lemmein'] == true) {
     require_once "show_page.php";
 } else if($squid_game_warn == false && $squid_game == true) {
     require_once "maintenance.php";

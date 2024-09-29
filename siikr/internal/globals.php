@@ -1,4 +1,6 @@
 <?php
+
+ini_set('display_errors', 0);
 $archiver_version = '3';
 $deletion_rate = 0.994; //approximate, we estimate users are sufficiently ashamed of roughly 0.5% of the things they say to warrant deletion. It would be expensive to determine the exact number on a case by case basis, so this estimate is derived from the average deletion rate on a sample of 200 users. The variance is actually quite high per user but ultimately this number gets divided by 50, so most of the variance gets swept under the 1.5 orders of magnitude.
 

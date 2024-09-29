@@ -1,5 +1,5 @@
 <?php
-$scriptVer = 83;
+$scriptVer = 84;
 require_once 'internal/disk_stats.php';
 try {
 	$diskpath = $db_disk;   
