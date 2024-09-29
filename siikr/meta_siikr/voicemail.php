@@ -46,6 +46,9 @@ if($node_obj == false) {
         updateNodeStats($updated_nodeObj);
         if($updated_nodeObj?->have_blog) {
             registerToBlogNodeMap($blog_uuid, $updated_nodeObj);
+        } else {
+            $db->prepare("DELETE FROM cached_blog_node_map WHERE node_id = :node_id AND blog_uuid = :blog_uuid")->exec(["blog_uuid"=>$blog_uuid, "node_id" => $node_obj->node_id])->fetch();
+            $db->prepare("DELETE FROM blog_node_map WHERE node_id = :node_id AND blog_uuid = :blog_uuid")->exec(["blog_uuid"=>$blog_uuid, "node_id" => $node_obj->node_id])->fetch();
         }
     }
 }

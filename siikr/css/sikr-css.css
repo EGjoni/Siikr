@@ -666,6 +666,9 @@ input#query::placeholder {
   color: #FFFFFF99;
   height: 0px;
   overflow: visible;
+  height: 0vh;
+  margin-top: 17em !important;
+  /* position: absolute; */
   width: 500px;
   margin: auto;
   grid-column: search;

@@ -1,5 +1,5 @@
 <?php
-$scriptVer = 80;
+$scriptVer = 82;
 require_once 'internal/disk_stats.php';
 try {
 	$diskpath = $db_disk;   
@@ -261,7 +261,7 @@ try {
 
         usedPercent = parseInt(100*(1-(node.free_space_mb/freeTotal)));
         let diskuseelem = bar;//document.getElementById("disk-use");
-        let diskString = node.node_name ?? "Node: "+node.node_id;//parseInt(usedPercent)+"% of diskspace used";
+        let diskString = node.node_name == "" ? "Node: "+node.node_id : node.node_name;//parseInt(usedPercent)+"% of diskspace used";
         let lightText = bar.querySelector(".texted-light");
         let darkText = bar.querySelector(".texted-dark");
         if(usedPercent > 97) {
@@ -269,22 +269,22 @@ try {
             diskuseelem.style.width = 'auto';
             lightText.style.width = 'auto';
             darkText.style.width = 'auto';
-            diskString = node.node_name ?? "Node: "+node.node_id;//"<b>Disk Status:</b> Everything's fucked. How could <a href='https://tumblr.com/antinegationism'>antinegationism</a> let this happen?";
+            //diskString = node.node_name ?? "Node: "+node.node_id;//"<b>Disk Status:</b> Everything's fucked. How could <a href='https://tumblr.com/antinegationism'>antinegationism</a> let this happen?";
         }
         else if(usedPercent > 95) {
             diskuseelem.style.height = '2.5em';
             diskuseelem.style.width = 'auto';
             lightText.style.width = 'auto';
             darkText.style.width = 'auto';
-            diskString = node.node_name ?? "Node: "+node.node_id;//"<b>Disk Status:</b> Freakishly low, call <a href='https://tumblr.com/antinegationism'>antinegationism</a>.";
+            //diskString = node.node_name ?? "Node: "+node.node_id;//"<b>Disk Status:</b> Freakishly low, call <a href='https://tumblr.com/antinegationism'>antinegationism</a>.";
         }
         else if(usedPercent > 90) {
             diskuseelem.style.width = 'auto';
-            diskString = node.node_name ??"<b>Disk "+node.node_id+" Status:</b> Getting kinda low.";
+            diskString = node.node_name ??"<b>"+diskString+" Status:</b> Getting kinda low.";
         }
         if(usedPercent <= 80) {
             diskuseelem.style.width = 'auto';
-            diskString = node.node_name ??"<b>Node "+node.node_id+" Status:</b> Everything's fine."
+            diskString = node.node_name ??"<b>"+diskString+" Status:</b> Everything's fine."
         }
 
         lightText.innerHTML = diskString;
@@ -334,7 +334,11 @@ try {
     <?php echo $injectable?>
     var alwaysPrepend = "";
     if(node_list == null || node_list.length == 0) {
-        var node_list = [{free_space_mb: myFree}];
+        var node_list = [{total_space_mb: myTotal, 
+            free_space_mb: myFree, 
+            node_id: 0, 
+            node_name: "Local", 
+            node_url: window.location.host}];
     }
     initDiskUseBars(node_list);
     

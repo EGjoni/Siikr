@@ -65,6 +65,7 @@ function extract_siikr_subblocks_from_subpost(&$subpost, $db_media_map, &$soFar,
     
     foreach($subpost->layout as $lay_item) {
         if($lay_item->type == "ask") {
+            $soFar["has_ask"] |= $mode;
             if(property_exists($lay_item, "attribution") && $lay_item->attribution?->blog?->name != null) {
                 $asking_blog_info = $lay_item?->attribution?->blog;
                 if(property_exists($asking_blog_info, "name")) {

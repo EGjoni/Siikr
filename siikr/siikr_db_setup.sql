@@ -165,6 +165,26 @@ $$;
 
 
 --
+-- Name: cont_to_int(public.has_content); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cont_to_int(content public.has_content) RETURNS integer
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    CASE content
+        WHEN 'FALSE' THEN RETURN 0;
+        WHEN 'SELF' THEN RETURN 1;
+        WHEN 'TRAIL' THEN RETURN 2;
+        WHEN 'BOTH' THEN RETURN 3;
+        ELSE
+            RAISE EXCEPTION 'Invalid has_content value: %', content;
+    END CASE;
+END;
+$$;
+
+
+--
 -- Name: delete_blog(character varying); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -466,6 +486,26 @@ BEGIN
     -- Increment the sequence
     PERFORM nextval('update_counter_seq');
     RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: int_to_cont(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.int_to_cont(value integer) RETURNS public.has_content
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    CASE value
+        WHEN 0 THEN RETURN 'FALSE'::has_content;
+        WHEN 1 THEN RETURN 'SELF'::has_content;
+        WHEN 2 THEN RETURN 'TRAIL'::has_content;
+        WHEN 3 THEN RETURN 'BOTH'::has_content;
+        ELSE
+            RAISE EXCEPTION 'Invalid integer for has_content: %', value;
+    END CASE;
 END;
 $$;
 
@@ -879,7 +919,8 @@ CREATE TABLE public.blogstats (
     last_stats_update timestamp without time zone,
     post_count_at_stat integer,
     smallest_indexed_post_id bigint,
-    largest_indexed_post_id bigint
+    largest_indexed_post_id bigint,
+    first_encountered timestamp without time zone DEFAULT now()
 );
 
 

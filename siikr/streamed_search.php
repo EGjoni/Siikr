@@ -168,6 +168,7 @@ function sendByStreamedSet($db, $blog_info, $search_query) {
 }
 
 function encodeAndFlush($obj) {
+    $obj->content_provider = $_SERVER["HTTP_HOST"];
     echo json_encode($obj);
     echo "\n#end_of_object#\n";
     ob_flush();      

@@ -69,6 +69,7 @@ function initSearch($username, $forward_params) {
         $blog_info->valid = false;
         $blog_info->display_error = $e->getMessage();
         echo json_encode($blog_info);
+        echo "\n#end_of_object#\n";
         flush();
         throw $e;
     }

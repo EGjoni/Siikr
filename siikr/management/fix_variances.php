@@ -3,7 +3,7 @@ require_once '../internal/globals.php';
 //require_once '../internal/math.php';
 
 $userInfo = posix_getpwuid(posix_geteuid());
-$db = new SPDO("pgsql:dbname=$db_name", $pg_user, $pg_pass);
+$db = getDb();//new SPDO("pgsql:dbname=$db_name", $pg_user, $pg_pass);
 
 
 
