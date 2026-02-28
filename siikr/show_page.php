@@ -1,5 +1,5 @@
 <?php
-$scriptVer = 90;
+$scriptVer = 91;
 require_once 'internal/disk_stats.php';
 try {
 	$diskpath = $db_disk;   
@@ -51,8 +51,10 @@ try {
             <div id="search-fields-container">
                 <button id="show-advanced" title="Advanced Filter" onclick="showAdvanced()"><img class="gear-icon" src="images/gear.svg"></img></button>
                 <input id="username" type="text" placeholder="Username" onkeyup="seekIfSubmit(event)">
-                <input id="query" type="text" placeholder='these words OR "this phrase" -"but not this one"' onkeyup="seekIfSubmit(event)">
+                <input id="query" type="text" placeholder='these words OR "this phrase" -"but not this one"' onkeyup="seekIfSubmit(event)" oninput="qbSyncFromQuery()">
+                <button id="qb-toggle" type="button" title="Visual query builder" onclick="qbToggle()">&#9776;</button>
                 <button id="search" value="Seek" onclick="preSeek()">Seek</button>
+                <?php require_once 'query_builder.php'?>
             </div>
         </div>
         <div id="progress-container">

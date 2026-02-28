@@ -157,6 +157,7 @@ ExecStart=/usr/bin/php ${document_root}/siikr/routing/msgRouter.php
 WantedBy=multi-user.target
 EOF
     sudo mkdir -p "$document_root/siikr/routing/"
+    sudo cp "$node_specific_data/routing/msgrouter.service" "$document_root/siikr/routing/msgrouter.service"
     sudo cp "$document_root/siikr/routing/msgrouter.service" /etc/systemd/system/msgrouter.service
     sudo systemctl daemon-reload
     sudo systemctl enable msgrouter.service
